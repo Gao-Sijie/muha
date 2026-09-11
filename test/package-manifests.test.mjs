@@ -67,7 +67,11 @@ test("each public tarball contains its package entrypoints and metadata", () => 
       assert.ok(paths.includes(required), `${directory} is missing ${required}`);
     }
     assert.equal(paths.some((path) => path.endsWith(".tsbuildinfo")), false);
-    assert.equal(paths.some((path) => path.endsWith(".ts")), false);
+    assert.equal(
+      paths.some((path) => path.startsWith("src/") && path.endsWith(".ts")),
+      false,
+      `${directory} leaked TypeScript source files into the tarball`,
+    );
     if (directory === "core" || directory === "kimi-adapter") {
       assert.ok(paths.includes("dist/workspace-mcp-worker.js"));
     }
