@@ -1,0 +1,9 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/core" },
+    { "path": "./packages/codex-adapter" },
+    { "path": "./packages/opencode-adapter" },
+    { "path": "./packages/kimi-adapter" }
+  ]
+}

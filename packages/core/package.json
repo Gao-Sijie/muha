@@ -1,0 +1,38 @@
+{
+  "name": "@muha-sdk/core",
+  "version": "0.1.11",
+  "description": "Common runtime primitives for Muha SDK coding harness integrations.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.20.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./internal": {
+      "types": "./dist/internal.d.ts",
+      "default": "./dist/internal.js"
+    }
+  },
+  "files": ["dist"],
+  "sideEffects": false,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Gao-Sijie/muha.git",
+    "directory": "packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/Gao-Sijie/muha/issues"
+  },
+  "homepage": "https://github.com/Gao-Sijie/muha#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "add-mcp": "2.0.0",
+    "skills": "1.5.21"
+  }
+}

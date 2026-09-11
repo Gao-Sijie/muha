@@ -1,0 +1,27 @@
+{
+  "name": "muha",
+  "version": "0.0.0-development",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/core",
+    "packages/codex-adapter",
+    "packages/opencode-adapter",
+    "packages/kimi-adapter"
+  ],
+  "engines": {
+    "node": ">=22.20.0"
+  },
+  "scripts": {
+    "build": "tsc -b --pretty false",
+    "clean": "tsc -b --clean",
+    "typecheck": "tsc -b --pretty false",
+    "test": "npm run build --silent && node --test test/*.test.mjs",
+    "check": "npm run typecheck && npm test",
+    "pack:dry-run": "npm run build --silent && npm pack --dry-run --json --workspace @muha-sdk/core && npm pack --dry-run --json --workspace @muha-sdk/codex-adapter && npm pack --dry-run --json --workspace @muha-sdk/opencode-adapter && npm pack --dry-run --json --workspace @muha-sdk/kimi-adapter"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "typescript": "5.9.3"
+  }
+}

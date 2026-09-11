@@ -1,0 +1,33 @@
+{
+  "name": "@muha-sdk/codex-adapter",
+  "version": "0.1.11",
+  "description": "Official Codex adapter for Muha SDK.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.20.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "sideEffects": false,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Gao-Sijie/muha.git",
+    "directory": "packages/codex-adapter"
+  },
+  "bugs": {
+    "url": "https://github.com/Gao-Sijie/muha/issues"
+  },
+  "homepage": "https://github.com/Gao-Sijie/muha#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@muha-sdk/core": "0.1.11"
+  }
+}
