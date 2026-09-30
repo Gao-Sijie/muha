@@ -29,12 +29,15 @@ import type {
   HarnessCapabilityPath,
 } from "./capabilities.js";
 import type { HarnessKind } from "./index.js";
+import {
+  createSessionReference,
+  type HarnessIntegrationRoute,
+  type SessionReference as ParsedSessionReference,
+} from "./reference.js";
 
-export interface SessionReference {
-  readonly harness: HarnessKind;
-  readonly sessionId: string;
-  readonly workspacePath: string;
-}
+export type SessionReference = ParsedSessionReference;
+
+export type { HarnessIntegrationRoute } from "./reference.js";
 
 export interface ListedSession {
   readonly reference: SessionReference;
@@ -115,31 +118,77 @@ export interface QuestionOption {
   readonly description?: string;
 }
 
+export type QuestionValue = string | number | boolean | readonly string[];
+
+export type QuestionCondition = {
+  readonly questionId: string;
+  readonly op: "eq" | "neq";
+  readonly comparison:
+    | { readonly kind: "options"; readonly optionIds: readonly string[] }
+    | { readonly kind: "scalar"; readonly value: string | number | boolean }
+    | { readonly kind: "private" };
+};
+
+export type QuestionInput =
+  | {
+      readonly kind: "select";
+      readonly options: readonly QuestionOption[];
+      readonly allowCustom: boolean;
+      readonly format?: "email" | "uri" | "date" | "date-time";
+      readonly minLength?: number;
+      readonly maxLength?: number;
+      readonly pattern?: string;
+      readonly placeholder?: string;
+    }
+  | {
+      readonly kind: "multiselect";
+      readonly options: readonly QuestionOption[];
+      readonly allowCustom: boolean;
+      readonly maxCustomItems?: number;
+      readonly minItems?: number;
+      readonly maxItems?: number;
+    }
+  | {
+      readonly kind: "text";
+      readonly format?: "email" | "uri" | "date" | "date-time";
+      readonly minLength?: number;
+      readonly maxLength?: number;
+      readonly pattern?: string;
+      readonly placeholder?: string;
+    }
+  | { readonly kind: "number"; readonly integer: boolean; readonly minimum?: number; readonly maximum?: number }
+  | { readonly kind: "boolean" }
+  | { readonly kind: "external"; readonly url: string };
+
 export interface QuestionItem {
   readonly questionId: string;
   readonly header?: string;
   readonly question: string;
   readonly description?: string;
-  readonly options: readonly QuestionOption[];
-  readonly multiple: boolean;
-  readonly allowCustom: boolean;
+  readonly input: QuestionInput;
+  readonly required: boolean;
+  readonly hidden: boolean;
+  readonly default:
+    | { readonly kind: "none" }
+    | { readonly kind: "visible"; readonly value: QuestionValue }
+    | { readonly kind: "hidden" };
+  readonly when: readonly QuestionCondition[];
 }
 
 export interface QuestionRequest {
   readonly requestId: string;
   readonly questions: readonly [QuestionItem, ...QuestionItem[]];
   readonly toolCallId?: string;
+  readonly description?: string;
 }
 
 export type QuestionAnswer =
-  | { readonly questionId: string; readonly kind: "options"; readonly optionIds: readonly [string, ...string[]] }
-  | { readonly questionId: string; readonly kind: "custom"; readonly text: string }
-  | {
-      readonly questionId: string;
-      readonly kind: "optionsWithCustom";
-      readonly optionIds: readonly [string, ...string[]];
-      readonly text: string;
-    }
+  | { readonly questionId: string; readonly kind: "selection"; readonly optionIds: readonly string[]; readonly customValues: readonly string[] }
+  | { readonly questionId: string; readonly kind: "text"; readonly text: string }
+  | { readonly questionId: string; readonly kind: "number"; readonly value: number }
+  | { readonly questionId: string; readonly kind: "boolean"; readonly value: boolean }
+  | { readonly questionId: string; readonly kind: "externalAcknowledged" }
+  | { readonly questionId: string; readonly kind: "useDefault" }
   | { readonly questionId: string; readonly kind: "skipped" };
 
 export type QuestionResponse =
@@ -310,6 +359,7 @@ export class CoreAgentSession implements AgentSession {
   readonly turnRetryPolicy: TurnRetryPolicy;
   #status: AgentSessionStatus = { status: "idle" };
   #closePromise: Promise<void> | undefined;
+  #closeSettled = false;
   #activeTurn: CoreTurnHandle | undefined;
   #starting = false;
   #selectionPending = false;
@@ -329,13 +379,11 @@ export class CoreAgentSession implements AgentSession {
     turnRetryPolicy: TurnRetryPolicy = defaultTurnRetryPolicy,
     readonly sleepBeforeRetry: TurnRetrySleeper = sleepWithAbort,
     readonly retryJitter: () => number = Math.random,
+    readonly route: HarnessIntegrationRoute = "native",
+    readonly nativeSessionBusy: () => boolean = () => false,
   ) {
     this.turnRetryPolicy = Object.freeze({ maxRetries: turnRetryPolicy.maxRetries });
-    this.reference = Object.freeze({
-      harness,
-      sessionId: adapterSession.nativeSessionId,
-      workspacePath,
-    });
+    this.reference = createSessionReference(harness, adapterSession.nativeSessionId, workspacePath, route);
   }
 
   get model(): string | undefined {
@@ -354,11 +402,17 @@ export class CoreAgentSession implements AgentSession {
     return this.#status;
   }
 
+  /** Runtime-internal execution/control guard shared across sibling handles. */
+  get nativeOperationPending(): boolean {
+    return this.#starting || this.#selectionPending || this.#status.status === "running" ||
+      (this.#closePromise !== undefined && !this.#closeSettled);
+  }
+
   async startTurn(input: TurnInput): Promise<TurnHandle> {
     if (this.status.status === "closed" || this.#closing) {
       throw new MuhaError({ code: "SESSION_CLOSED", message: "Session is closed" });
     }
-    if (this.#status.status === "running" || this.#starting || this.#selectionPending) {
+    if (this.#status.status === "running" || this.#starting || this.#selectionPending || this.nativeSessionBusy()) {
       throw new MuhaError({ code: "SESSION_BUSY", message: "Session already has an active Turn" });
     }
     this.#starting = true;
@@ -438,7 +492,7 @@ export class CoreAgentSession implements AgentSession {
     if (this.status.status === "closed" || this.#closing) {
       throw new MuhaError({ code: "SESSION_CLOSED", message: "Session is closed" });
     }
-    if (this.#status.status === "running" || this.#starting || this.#selectionPending) {
+    if (this.#status.status === "running" || this.#starting || this.#selectionPending || this.nativeSessionBusy()) {
       throw new MuhaError({ code: "SESSION_BUSY", message: "Model can only be changed while idle" });
     }
     if (typeof model !== "string" || model.length === 0) invalid("Model must be a non-empty string");
@@ -481,7 +535,7 @@ export class CoreAgentSession implements AgentSession {
     if (this.status.status === "closed" || this.#closing) {
       throw new MuhaError({ code: "SESSION_CLOSED", message: "Session is closed" });
     }
-    if (this.#status.status === "running" || this.#starting || this.#selectionPending) {
+    if (this.#status.status === "running" || this.#starting || this.#selectionPending || this.nativeSessionBusy()) {
       throw new MuhaError({ code: "SESSION_BUSY", message: "Effort can only be changed while idle" });
     }
     validateEffortInput(effort);
@@ -555,6 +609,7 @@ export class CoreAgentSession implements AgentSession {
       }
       await this.adapterSession.close();
     } finally {
+      this.#closeSettled = true;
       this.#status = { status: "closed" };
     }
   }
@@ -569,6 +624,7 @@ export class CoreAgentSession implements AgentSession {
       }
       await this.adapterSession.close();
     } finally {
+      this.#closeSettled = true;
       this.#status = { status: "closed" };
     }
   }
@@ -583,6 +639,7 @@ export class CoreAgentSession implements AgentSession {
       }
       await this.adapterSession.close();
     } finally {
+      this.#closeSettled = true;
       this.#status = { status: "closed" };
     }
   }
@@ -601,6 +658,7 @@ function approvalIsInvalidated(approval: ApprovalState): boolean {
 interface QuestionState {
   readonly request: QuestionRequest;
   readonly nativeRequestId: string;
+  readonly nativeQuestions: readonly AdapterQuestionItem[];
   status: "pending" | "resolving" | "resolved" | "invalidated";
 }
 
@@ -619,52 +677,210 @@ interface ValidatedQuestionResponse {
 function createQuestionRequest(
   nativeQuestions: readonly AdapterQuestionItem[],
   toolCallId: string | undefined,
+  description?: string,
 ): QuestionRequest {
   if (!Array.isArray(nativeQuestions) || nativeQuestions.length === 0) {
     protocol("Question Request must contain at least one Question");
   }
-  const questions = nativeQuestions.map((item) => {
-    if (!isPlainObject(item)) protocol("Question item must be an object");
+  if (description !== undefined) requireNonEmpty(description, "Question Request description");
+  const questions: QuestionItem[] = [];
+  nativeQuestions.forEach((source, index) => {
+    if (!isPlainObject(source)) protocol("Question item must be an object");
+    const item = source as unknown as AdapterQuestionItem;
     requireNonEmpty(item.question, "Question text");
     if (item.header !== undefined) requireNonEmpty(item.header, "Question header");
     if (item.description !== undefined) requireNonEmpty(item.description, "Question description");
-    if (typeof item.multiple !== "boolean" || typeof item.allowCustom !== "boolean") {
-      protocol("Question multiple and allowCustom must be booleans");
+    const typed = "input" in item;
+    const input: QuestionInput = typed ? publicQuestionInput(item.input) : legacyQuestionInput(item);
+    const defaultValue = typed ? item.defaultValue : undefined;
+    if (typed && (typeof item.required !== "boolean" || typeof item.hidden !== "boolean")) {
+      protocol("Question required and hidden flags must be booleans");
     }
-    if (!Array.isArray(item.options)) protocol("Question options must be an array");
-    if (item.options.length === 0 && !item.allowCustom) {
-      protocol("Question without options must allow a custom answer");
+    if (defaultValue !== undefined && (!isQuestionValue(defaultValue) || !defaultMatchesInput(defaultValue, input))) {
+      protocol("Question default value is invalid");
     }
-    const options = item.options.map((option) => {
-      if (!isPlainObject(option)) protocol("Question option must be an object");
-      requireNonEmpty(option.label, "Question option label");
-      if (option.description !== undefined) requireNonEmpty(option.description, "Question option description");
-      return Object.freeze({
-        optionId: randomUUID(),
-        label: option.label,
-        ...(option.description === undefined ? {} : { description: option.description }),
-      });
-    });
-    return Object.freeze({
+    const when: QuestionCondition[] = [];
+    if (typed) {
+      if (item.when !== undefined && !Array.isArray(item.when)) protocol("Question conditions must be an array");
+      for (const condition of item.when ?? []) {
+        if (!Number.isSafeInteger(condition.questionIndex) || condition.questionIndex < 0 ||
+            condition.questionIndex >= index || (condition.op !== "eq" && condition.op !== "neq") ||
+            !["string", "number", "boolean"].includes(typeof condition.value) ||
+            typeof condition.value === "number" && !Number.isFinite(condition.value)) {
+          protocol("Question condition is invalid");
+        }
+        const target = questions[condition.questionIndex]!;
+        const nativeTarget = nativeQuestions[condition.questionIndex]!;
+        if (!conditionMatchesInput(condition.value, nativeTarget)) {
+          protocol("Question condition value does not match its referenced field");
+        }
+        const comparison: QuestionCondition["comparison"] = target.hidden
+          ? { kind: "private" }
+          : conditionComparison(target, nativeTarget, condition.value);
+        when.push(Object.freeze({ questionId: target.questionId, op: condition.op,
+          comparison: Object.freeze(comparison) }));
+      }
+    }
+    const defaultShape: QuestionItem["default"] = defaultValue === undefined
+      ? { kind: "none" }
+      : typed && item.hidden
+        ? { kind: "hidden" }
+        : { kind: "visible", value: Array.isArray(defaultValue) ? Object.freeze([...defaultValue]) : defaultValue };
+    questions.push(Object.freeze({
       questionId: randomUUID(),
       ...(item.header === undefined ? {} : { header: item.header }),
       question: item.question,
       ...(item.description === undefined ? {} : { description: item.description }),
-      options: Object.freeze(options),
-      multiple: item.multiple,
-      allowCustom: item.allowCustom,
-    });
-  }) as [QuestionItem, ...QuestionItem[]];
+      input,
+      required: typed ? item.required : false,
+      hidden: typed ? item.hidden : false,
+      default: Object.freeze(defaultShape),
+      when: Object.freeze(when),
+    }));
+  });
   return Object.freeze({
     requestId: randomUUID(),
-    questions: Object.freeze(questions),
+    questions: Object.freeze(questions) as readonly [QuestionItem, ...QuestionItem[]],
     ...(toolCallId === undefined ? {} : { toolCallId }),
+    ...(description === undefined ? {} : { description }),
   });
+}
+
+function isQuestionValue(value: unknown): value is QuestionValue {
+  return typeof value === "string" || typeof value === "boolean" ||
+    typeof value === "number" && Number.isFinite(value) ||
+    Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function defaultMatchesInput(value: QuestionValue, input: QuestionInput): boolean {
+  switch (input.kind) {
+    case "select": case "text": return typeof value === "string";
+    case "multiselect": return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+    case "number": return typeof value === "number" && Number.isFinite(value) &&
+      (!input.integer || Number.isInteger(value));
+    case "boolean": return typeof value === "boolean";
+    case "external": return false;
+  }
+}
+
+function conditionMatchesInput(value: string | number | boolean, native: AdapterQuestionItem): boolean {
+  if (!("input" in native)) return false;
+  const input = native.input;
+  if (input.kind === "number") return typeof value === "number" && Number.isFinite(value);
+  if (input.kind === "boolean") return typeof value === "boolean";
+  if (input.kind === "external") return false;
+  if (typeof value !== "string") return false;
+  if ((input.kind === "select" || input.kind === "multiselect") && !input.allowCustom &&
+      !input.options.some((option) => option.value === value)) return false;
+  return true;
+}
+
+function optionList(options: readonly { readonly label: string; readonly description?: string }[],
+  allowEmpty = false): readonly QuestionOption[] {
+  if (!Array.isArray(options)) protocol("Question options must be an array");
+  return Object.freeze(options.map((option) => {
+    if (!isPlainObject(option)) protocol("Question option must be an object");
+    if (allowEmpty) {
+      if (typeof option.label !== "string" ||
+          option.description !== undefined && typeof option.description !== "string") {
+        protocol("Question option presentation is invalid");
+      }
+    } else {
+      requireNonEmpty(option.label, "Question option label");
+      if (option.description !== undefined) requireNonEmpty(option.description, "Question option description");
+    }
+    return Object.freeze({ optionId: randomUUID(), label: option.label,
+      ...(option.description === undefined ? {} : { description: option.description }) });
+  }));
+}
+
+function legacyQuestionInput(item: Extract<AdapterQuestionItem, { readonly options: readonly unknown[] }>): QuestionInput {
+  if (typeof item.multiple !== "boolean" || typeof item.allowCustom !== "boolean") {
+    protocol("Question multiple and allowCustom must be booleans");
+  }
+  const options = optionList(item.options);
+  if (options.length === 0 && !item.allowCustom) protocol("Question without options must allow a custom answer");
+  if (options.length === 0) return Object.freeze({ kind: "text" });
+  return Object.freeze(item.multiple
+    ? { kind: "multiselect", options, allowCustom: item.allowCustom, maxCustomItems: 1 }
+    : { kind: "select", options, allowCustom: item.allowCustom });
+}
+
+function publicQuestionInput(input: import("./internal.js").AdapterQuestionInput): QuestionInput {
+  if (!isPlainObject(input) || typeof input.kind !== "string") protocol("Question input is invalid");
+  if (input.kind === "select" || input.kind === "multiselect") {
+    if (typeof input.allowCustom !== "boolean" || !Array.isArray(input.options)) {
+      protocol("Question selection input is invalid");
+    }
+    for (const option of input.options) {
+      if (typeof option.value !== "string") protocol("Question option value is invalid");
+    }
+    const options = optionList(input.options, true);
+    if (input.kind === "select") return Object.freeze({ kind: "select", options,
+      allowCustom: input.allowCustom, ...textConstraints(input) });
+    for (const bound of [input.maxCustomItems, input.minItems, input.maxItems]) {
+      if (bound !== undefined && (!Number.isSafeInteger(bound) || bound < 0)) {
+        protocol("Question multiselect bound is invalid");
+      }
+    }
+    return Object.freeze({ kind: "multiselect", options, allowCustom: input.allowCustom,
+      ...(input.maxCustomItems === undefined ? {} : { maxCustomItems: input.maxCustomItems }),
+      ...(input.minItems === undefined ? {} : { minItems: input.minItems }),
+      ...(input.maxItems === undefined ? {} : { maxItems: input.maxItems }) });
+  }
+  if (input.kind === "text") return Object.freeze({ kind: "text", ...textConstraints(input) });
+  if (input.kind === "number") {
+    if (typeof input.integer !== "boolean" ||
+        input.minimum !== undefined && (typeof input.minimum !== "number" || !Number.isFinite(input.minimum)) ||
+        input.maximum !== undefined && (typeof input.maximum !== "number" || !Number.isFinite(input.maximum))) {
+      protocol("Question number constraints are invalid");
+    }
+    return Object.freeze({ kind: "number", integer: input.integer,
+    ...(input.minimum === undefined ? {} : { minimum: input.minimum }),
+    ...(input.maximum === undefined ? {} : { maximum: input.maximum }) });
+  }
+  if (input.kind === "boolean") return Object.freeze({ kind: "boolean" });
+  if (input.kind === "external") {
+    if (typeof input.url !== "string") protocol("Question external URL is invalid");
+    return Object.freeze({ kind: "external", url: input.url });
+  }
+  protocol("Question input kind is unsupported");
+}
+
+function textConstraints(input: { readonly format?: string; readonly minLength?: number;
+  readonly maxLength?: number; readonly pattern?: string; readonly placeholder?: string }) {
+  if (input.format !== undefined && !["email", "uri", "date", "date-time"].includes(input.format) ||
+      input.pattern !== undefined && typeof input.pattern !== "string" ||
+      input.placeholder !== undefined && typeof input.placeholder !== "string" ||
+      input.minLength !== undefined && (!Number.isSafeInteger(input.minLength) || input.minLength < 0) ||
+      input.maxLength !== undefined && (!Number.isSafeInteger(input.maxLength) || input.maxLength < 0)) {
+    protocol("Question text constraints are invalid");
+  }
+  return {
+    ...(input.format === undefined ? {} : { format: input.format as "email" | "uri" | "date" | "date-time" }),
+    ...(input.minLength === undefined ? {} : { minLength: input.minLength }),
+    ...(input.maxLength === undefined ? {} : { maxLength: input.maxLength }),
+    ...(input.pattern === undefined ? {} : { pattern: input.pattern }),
+    ...(input.placeholder === undefined ? {} : { placeholder: input.placeholder }),
+  };
+}
+
+function conditionComparison(target: QuestionItem, native: AdapterQuestionItem,
+  value: string | number | boolean): QuestionCondition["comparison"] {
+  if ("input" in native && (native.input.kind === "select" || native.input.kind === "multiselect") &&
+      (target.input.kind === "select" || target.input.kind === "multiselect")) {
+    const targetInput = target.input;
+    const optionIds = native.input.options.flatMap((option, index) =>
+      option.value === value ? [targetInput.options[index]!.optionId] : []);
+    if (optionIds.length > 0) return { kind: "options", optionIds: Object.freeze(optionIds) };
+  }
+  return { kind: "scalar", value };
 }
 
 function validateQuestionResponse(
   value: QuestionResponse,
   request: QuestionRequest,
+  nativeQuestions: readonly AdapterQuestionItem[],
 ): ValidatedQuestionResponse {
   if (!isPlainObject(value)) invalid("Question response must be an object");
   if (value.action === "dismiss") {
@@ -689,9 +905,36 @@ function validateQuestionResponse(
   request.questions.forEach((question, questionIndex) => {
     const answer = byQuestion.get(question.questionId);
     if (!answer) invalid("Question response contains a missing or foreign Question ID");
-    const mapped = validatePublicQuestionAnswer(answer, question, questionIndex);
+    const mapped = validatePublicQuestionAnswer(answer, question, nativeQuestions[questionIndex]!, questionIndex);
     publicAnswers.push(mapped.publicAnswer);
     adapterAnswers.push(mapped.adapterAnswer);
+  });
+  nativeQuestions.forEach((native, questionIndex) => {
+    const answer = publicAnswers[questionIndex]!;
+    const active = !('input' in native) || (native.when ?? []).every((condition) => {
+      const target = nativeQuestions[condition.questionIndex];
+      const targetAnswer = adapterAnswers[condition.questionIndex];
+      if (!target || !targetAnswer) invalid("Question condition reference is invalid");
+      const candidate = nativeQuestionValue(target, targetAnswer);
+      if (candidate === undefined) return false;
+      const hit = Array.isArray(candidate) ? candidate.includes(condition.value as string) : candidate === condition.value;
+      return condition.op === "eq" ? hit : !hit;
+    });
+    if (!active && answer.kind !== "skipped") invalid("Inactive Question field must be skipped");
+    if (active && answer.kind === "skipped" && 'input' in native && native.required) {
+      invalid("Required Question field cannot be skipped");
+    }
+    if (active && answer.kind === "selection" && 'input' in native && native.required &&
+        answer.optionIds.length + answer.customValues.length === 0) {
+      invalid("Required Question selection cannot be empty");
+    }
+    if (active && answer.kind === "text" && 'input' in native && native.required && answer.text.length === 0) {
+      invalid("Required Question text cannot be empty");
+    }
+    if (active && 'input' in native) {
+      validateTypedQuestionValue(request.questions[questionIndex]!, native,
+        nativeQuestionValue(native, adapterAnswers[questionIndex]!));
+    }
   });
   const tuple = Object.freeze(publicAnswers) as readonly [QuestionAnswer, ...QuestionAnswer[]];
   return {
@@ -703,6 +946,7 @@ function validateQuestionResponse(
 function validatePublicQuestionAnswer(
   answer: QuestionAnswer,
   question: QuestionItem,
+  native: AdapterQuestionItem,
   questionIndex: number,
 ): { publicAnswer: QuestionAnswer; adapterAnswer: AdapterQuestionAnswer } {
   if (answer.kind === "skipped") {
@@ -712,66 +956,172 @@ function validatePublicQuestionAnswer(
       adapterAnswer: { questionIndex, kind: "skipped" },
     };
   }
-  if (answer.kind === "custom") {
-    assertOnlyKeys(answer, ["questionId", "kind", "text"], "Custom Question answer");
-    if (!question.allowCustom || typeof answer.text !== "string" || answer.text.length === 0) {
-      invalid("Custom Question answer is not allowed or is empty");
+  if (answer.kind === "useDefault") {
+    assertOnlyKeys(answer, ["questionId", "kind"], "Default Question answer");
+    if (question.default.kind === "none" || !('input' in native)) invalid("Question has no native default");
+    return { publicAnswer: Object.freeze({ questionId: question.questionId, kind: "useDefault" }),
+      adapterAnswer: { questionIndex, kind: "useDefault" } };
+  }
+  if (answer.kind === "selection") {
+    assertOnlyKeys(answer, ["questionId", "kind", "optionIds", "customValues"], "Selection Question answer");
+    if (question.input.kind !== "select" && question.input.kind !== "multiselect") {
+      invalid("Question does not accept a selection");
     }
-    return {
-      publicAnswer: Object.freeze({ questionId: question.questionId, kind: "custom", text: answer.text }),
-      adapterAnswer: { questionIndex, kind: "custom", text: answer.text },
-    };
+    if (!Array.isArray(answer.optionIds) || !Array.isArray(answer.customValues) ||
+        answer.customValues.some((entry) => typeof entry !== "string" ||
+          entry.length === 0 && !('input' in native)) ||
+        answer.customValues.length > 0 && !question.input.allowCustom) {
+      invalid("Question selection values are invalid");
+    }
+    const optionIndexes: number[] = [];
+    const seen = new Set<string>();
+    for (const optionId of answer.optionIds) {
+      if (typeof optionId !== "string" || seen.has(optionId)) invalid("Question option IDs must be unique strings");
+      seen.add(optionId);
+      const optionIndex = question.input.options.findIndex((option) => option.optionId === optionId);
+      if (optionIndex < 0) invalid("Question answer contains a foreign option ID");
+      optionIndexes.push(optionIndex);
+    }
+    const count = optionIndexes.length + answer.customValues.length;
+    if (question.input.kind === "select" && count !== 1) invalid("Single-select Question requires one value");
+    if (question.input.kind === "multiselect") {
+      if (question.input.maxCustomItems !== undefined &&
+          answer.customValues.length > question.input.maxCustomItems) invalid("Question has too many custom values");
+      if (question.input.minItems !== undefined && count < question.input.minItems ||
+          question.input.maxItems !== undefined && count > question.input.maxItems) {
+        invalid("Question selection count is outside the allowed bounds");
+      }
+    }
+    const publicAnswer: QuestionAnswer = Object.freeze({ questionId: question.questionId, kind: "selection",
+      optionIds: Object.freeze([...answer.optionIds]), customValues: Object.freeze([...answer.customValues]) });
+    if (!('input' in native)) {
+      if (answer.customValues.length === 1 && optionIndexes.length === 0) {
+        return { publicAnswer, adapterAnswer: { questionIndex, kind: "custom", text: answer.customValues[0]! } };
+      }
+      if (answer.customValues.length === 1) {
+        return { publicAnswer, adapterAnswer: { questionIndex, kind: "optionsWithCustom",
+          optionIndexes, text: answer.customValues[0]! } };
+      }
+      return { publicAnswer, adapterAnswer: { questionIndex, kind: "options", optionIndexes } };
+    }
+    return { publicAnswer, adapterAnswer: { questionIndex, kind: "selection", optionIndexes,
+      customValues: [...answer.customValues] } };
   }
-  if (answer.kind !== "options" && answer.kind !== "optionsWithCustom") {
-    invalid("Question answer kind is invalid");
+  if (answer.kind === "text") {
+    assertOnlyKeys(answer, ["questionId", "kind", "text"], "Text Question answer");
+    if (question.input.kind !== "text" || typeof answer.text !== "string") {
+      invalid("Question does not accept text");
+    }
+    return { publicAnswer: Object.freeze({ questionId: question.questionId, kind: "text", text: answer.text }),
+      adapterAnswer: 'input' in native ? { questionIndex, kind: "text", text: answer.text }
+        : { questionIndex, kind: "custom", text: answer.text } };
   }
-  const withCustom = answer.kind === "optionsWithCustom";
-  assertOnlyKeys(
-    answer,
-    withCustom ? ["questionId", "kind", "optionIds", "text"] : ["questionId", "kind", "optionIds"],
-    "Option Question answer",
-  );
-  if (!Array.isArray(answer.optionIds) || answer.optionIds.length === 0) {
-    invalid("Option Question answer requires at least one option");
+  if (answer.kind === "number") {
+    assertOnlyKeys(answer, ["questionId", "kind", "value"], "Number Question answer");
+    if (question.input.kind !== "number" || typeof answer.value !== "number" ||
+        !Number.isFinite(answer.value) || question.input.integer && !Number.isInteger(answer.value) ||
+        question.input.minimum !== undefined && answer.value < question.input.minimum ||
+        question.input.maximum !== undefined && answer.value > question.input.maximum) {
+      invalid("Question number is invalid");
+    }
+    return { publicAnswer: Object.freeze({ questionId: question.questionId, kind: "number", value: answer.value }),
+      adapterAnswer: { questionIndex, kind: "number", value: answer.value } };
   }
-  if (!question.multiple && answer.optionIds.length !== 1) {
-    invalid("A single-select Question requires exactly one option");
+  if (answer.kind === "boolean") {
+    assertOnlyKeys(answer, ["questionId", "kind", "value"], "Boolean Question answer");
+    if (question.input.kind !== "boolean" || typeof answer.value !== "boolean") invalid("Question boolean is invalid");
+    return { publicAnswer: Object.freeze({ questionId: question.questionId, kind: "boolean", value: answer.value }),
+      adapterAnswer: { questionIndex, kind: "boolean", value: answer.value } };
   }
-  if (
-    withCustom &&
-    (!question.multiple ||
-      !question.allowCustom ||
-      typeof answer.text !== "string" ||
-      answer.text.length === 0)
-  ) {
-    invalid("Options with custom text require a multiple custom-enabled Question");
+  if (answer.kind === "externalAcknowledged") {
+    assertOnlyKeys(answer, ["questionId", "kind"], "External Question answer");
+    if (question.input.kind !== "external") invalid("Question is not an external action");
+    return { publicAnswer: Object.freeze({ questionId: question.questionId, kind: "externalAcknowledged" }),
+      adapterAnswer: { questionIndex, kind: "externalAcknowledged" } };
   }
-  const optionIndexes: number[] = [];
-  const seen = new Set<string>();
-  for (const optionId of answer.optionIds) {
-    if (typeof optionId !== "string" || seen.has(optionId)) invalid("Question option IDs must be unique strings");
-    seen.add(optionId);
-    const optionIndex = question.options.findIndex((option) => option.optionId === optionId);
-    if (optionIndex < 0) invalid("Question answer contains a foreign option ID");
-    optionIndexes.push(optionIndex);
+  invalid("Question answer kind is invalid");
+}
+
+function nativeQuestionValue(native: AdapterQuestionItem, answer: AdapterQuestionAnswer): QuestionValue | undefined {
+  if (answer.kind === "skipped") return undefined;
+  if (answer.kind === "useDefault") return 'input' in native ? native.defaultValue : undefined;
+  if (answer.kind === "text" || answer.kind === "custom") return answer.text;
+  if (answer.kind === "number" || answer.kind === "boolean") return answer.value;
+  if (answer.kind === "externalAcknowledged") return true;
+  if (!('input' in native) || (native.input.kind !== "select" && native.input.kind !== "multiselect")) return undefined;
+  if (answer.kind !== "selection") return undefined;
+  const input = native.input;
+  const values = [...answer.optionIndexes.map((index) => input.options[index]!.value), ...answer.customValues];
+  return native.input.kind === "select" ? values[0] : values;
+}
+
+function validateTypedQuestionValue(question: QuestionItem,
+  native: Extract<AdapterQuestionItem, { readonly input: unknown }>, value: QuestionValue | undefined): void {
+  if (value === undefined) return;
+  const input = question.input;
+  const source = native.input;
+  if (input.kind === "select" || input.kind === "text") {
+    if (typeof value !== "string") invalid("Question text value is invalid");
+    if (native.required && value.length === 0) invalid("Required Question text cannot be empty");
+    if (input.minLength !== undefined && value.length < input.minLength ||
+        input.maxLength !== undefined && value.length > input.maxLength) {
+      invalid("Question text length is outside the allowed bounds");
+    }
+    if (input.pattern !== undefined) {
+      try { if (!new RegExp(input.pattern).test(value)) invalid("Question text does not match its pattern"); }
+      catch (error) { if (error instanceof MuhaError) throw error; protocol("Question text pattern is invalid"); }
+    }
+    if (input.format === "email" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ||
+        input.format === "uri" && !URL.canParse(value) ||
+        input.format === "date" && !validQuestionDate(value) ||
+        input.format === "date-time" && Number.isNaN(new Date(value).getTime())) {
+      invalid("Question text format is invalid");
+    }
+    if (input.kind === "select" && source.kind === "select" && !source.allowCustom &&
+        !source.options.some((option) => option.value === value)) {
+      invalid("Question selection is not among its options");
+    }
+    return;
   }
-  const optionIds = Object.freeze([...answer.optionIds]) as readonly [string, ...string[]];
-  if (withCustom) {
-    const text = answer.text;
-    return {
-      publicAnswer: Object.freeze({ questionId: question.questionId, kind: "optionsWithCustom", optionIds, text }),
-      adapterAnswer: { questionIndex, kind: "optionsWithCustom", optionIndexes, text },
-    };
+  if (input.kind === "multiselect") {
+    if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) {
+      invalid("Question multiselect value is invalid");
+    }
+    if (native.required && value.length === 0 ||
+        input.minItems !== undefined && value.length < input.minItems ||
+        input.maxItems !== undefined && value.length > input.maxItems) {
+      invalid("Question multiselect count is outside the allowed bounds");
+    }
+    if (source.kind === "multiselect" && !source.allowCustom &&
+        value.some((entry) => !source.options.some((option) => option.value === entry))) {
+      invalid("Question multiselect contains an unavailable value");
+    }
+    return;
   }
-  return {
-    publicAnswer: Object.freeze({ questionId: question.questionId, kind: "options", optionIds }),
-    adapterAnswer: { questionIndex, kind: "options", optionIndexes },
-  };
+  if (input.kind === "number") {
+    if (typeof value !== "number" || !Number.isFinite(value) ||
+        input.integer && !Number.isInteger(value) ||
+        input.minimum !== undefined && value < input.minimum ||
+        input.maximum !== undefined && value > input.maximum) invalid("Question number is invalid");
+    return;
+  }
+  if (input.kind === "boolean") {
+    if (typeof value !== "boolean") invalid("Question boolean is invalid");
+    return;
+  }
+  if (value !== true) invalid("Question external action is not acknowledged");
+}
+
+function validQuestionDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
 function mapAdapterQuestionAnswers(
   answers: readonly AdapterQuestionAnswer[],
   request: QuestionRequest,
+  nativeQuestions: readonly AdapterQuestionItem[],
 ): { publicAnswers: readonly [QuestionAnswer, ...QuestionAnswer[]] } {
   if (!Array.isArray(answers) || answers.length !== request.questions.length) {
     protocol("Harness Question answer must cover every Question exactly once");
@@ -789,29 +1139,33 @@ function mapAdapterQuestionAnswers(
     const answer = byIndex.get(questionIndex);
     if (!answer) protocol("Harness omitted a Question answer");
     if (answer.kind === "skipped") return { questionId: question.questionId, kind: "skipped" };
-    if (answer.kind === "custom") {
-      return { questionId: question.questionId, kind: "custom", text: answer.text };
+    if (answer.kind === "useDefault") return { questionId: question.questionId, kind: "useDefault" };
+    if (answer.kind === "text") return { questionId: question.questionId, kind: "text", text: answer.text };
+    if (answer.kind === "number") return { questionId: question.questionId, kind: "number", value: answer.value };
+    if (answer.kind === "boolean") return { questionId: question.questionId, kind: "boolean", value: answer.value };
+    if (answer.kind === "externalAcknowledged") {
+      return { questionId: question.questionId, kind: "externalAcknowledged" };
     }
-    if (answer.kind !== "options" && answer.kind !== "optionsWithCustom") {
-      protocol("Harness Question answer kind is invalid");
+    if (answer.kind === "custom" && question.input.kind === "text") {
+      return { questionId: question.questionId, kind: "text", text: answer.text };
     }
-    if (!Array.isArray(answer.optionIndexes)) protocol("Harness Question option indexes are invalid");
-    const optionIds = answer.optionIndexes.map((optionIndex) => {
-      if (!Number.isSafeInteger(optionIndex) || optionIndex < 0 || optionIndex >= question.options.length) {
+    if (question.input.kind !== "select" && question.input.kind !== "multiselect") {
+      protocol("Harness Question answer is not a selection");
+    }
+    const input = question.input;
+    const indexes = answer.kind === "custom" ? [] : answer.optionIndexes;
+    if (!Array.isArray(indexes)) protocol("Harness Question option indexes are invalid");
+    const optionIds = indexes.map((optionIndex) => {
+      if (!Number.isSafeInteger(optionIndex) || optionIndex < 0 || optionIndex >= input.options.length) {
         protocol("Harness Question option index is out of range");
       }
-      return question.options[optionIndex]!.optionId;
-    }) as [string, ...string[]];
-    return answer.kind === "options"
-      ? { questionId: question.questionId, kind: "options", optionIds }
-      : {
-          questionId: question.questionId,
-          kind: "optionsWithCustom",
-          optionIds,
-          text: answer.text,
-        };
+      return input.options[optionIndex]!.optionId;
+    });
+    const customValues = answer.kind === "custom" || answer.kind === "optionsWithCustom"
+      ? [answer.text] : answer.kind === "selection" ? answer.customValues : [];
+    return { questionId: question.questionId, kind: "selection", optionIds, customValues };
   }) as [QuestionAnswer, ...QuestionAnswer[]];
-  const validated = validateQuestionResponse({ action: "answer", answers: publicAnswers }, request);
+  const validated = validateQuestionResponse({ action: "answer", answers: publicAnswers }, request, nativeQuestions);
   if (validated.publicResponse.action !== "answer") protocol("Harness Question answer mapping failed");
   return { publicAnswers: validated.publicResponse.answers };
 }
@@ -887,7 +1241,7 @@ class CoreTurnHandle implements TurnHandle {
     if (typeof requestId !== "string" || requestId.length === 0) invalid("Question requestId must be non-empty");
     const question = this.#questions.get(requestId);
     if (!question) throw interactionError("TURN_INTERACTION_NOT_FOUND", "question", requestId);
-    const validated = validateQuestionResponse(response, question.request);
+    const validated = validateQuestionResponse(response, question.request, question.nativeQuestions);
     await this.#resolveQuestion(question, validated, "caller");
   }
 
@@ -1228,10 +1582,12 @@ class CoreTurnHandle implements TurnHandle {
             if (!tool) protocol("Question Request references a Tool Call that has not started");
             toolCallId = tool.id;
           }
-          const request = createQuestionRequest(nativeEvent.questions, toolCallId);
+          const nativeQuestions = structuredClone(nativeEvent.questions);
+          const request = createQuestionRequest(nativeQuestions, toolCallId, nativeEvent.description);
           const question: QuestionState = {
             request,
             nativeRequestId: nativeEvent.nativeRequestId,
+            nativeQuestions,
             status: "pending",
           };
           this.#questions.set(request.requestId, question);
@@ -1243,7 +1599,7 @@ class CoreTurnHandle implements TurnHandle {
           this.#requireEventCapability(this.capabilities.turnQuestions, "turnQuestions");
           const question = this.#requireNativeQuestion(nativeEvent.nativeRequestId);
           if (question.status === "pending" || question.status === "resolving") {
-            const { publicAnswers } = mapAdapterQuestionAnswers(nativeEvent.answers, question.request);
+            const { publicAnswers } = mapAdapterQuestionAnswers(nativeEvent.answers, question.request, question.nativeQuestions);
             question.status = "resolved";
             this.#emit({
               type: "question.resolved",
@@ -1272,12 +1628,12 @@ class CoreTurnHandle implements TurnHandle {
         }
         case "turn.completed": {
           if ([...messages.values()].some(({ completed }) => !completed)) {
-            protocol("Codex completed with an unfinished Assistant Message");
+            protocol(`${this.harness} completed with an unfinished Assistant Message`);
           }
           if ([...tools.values()].some(({ completed }) => !completed)) {
-            protocol("Codex completed with an unfinished Tool Call");
+            protocol(`${this.harness} completed with an unfinished Tool Call`);
           }
-          if (!finalMessage) protocol("Codex completed without an Assistant Message");
+          if (!finalMessage) protocol(`${this.harness} completed without an Assistant Message`);
           await this.#invalidateInteractions();
           const usage = this.#lastUsage;
           const terminal = {
@@ -1899,7 +2255,8 @@ function isStrictBase64(value: string): boolean {
     decoded.toString("base64").replace(/=+$/, "") === value.replace(/=+$/, "");
 }
 
-function detectImageMediaType(bytes: Uint8Array): ImageMediaType | undefined {
+/** Internal image signature check; deliberately not exported by the package API. */
+export function detectImageMediaType(bytes: Uint8Array): ImageMediaType | undefined {
   if (
     bytes.length >= 8 &&
     bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 &&

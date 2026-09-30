@@ -1,7 +1,7 @@
-import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createRequire } from "node:module";
 import { createInterface, type Interface } from "node:readline";
+import { setTimeout as delay } from "node:timers/promises";
 
 import type { HarnessErrorData, OfficialAdapterOptions } from "@muha-sdk/core";
 import type {
@@ -18,6 +18,8 @@ import type {
 } from "@muha-sdk/core/internal";
 
 const defaultTimeoutMs = 60_000;
+const questionFeatureCheckTimeoutMs = 5_000;
+const questionFeatureName = "default_mode_request_user_input";
 const adapterVersion = (createRequire(import.meta.url)("../package.json") as {
   version: string;
 }).version;
@@ -32,17 +34,25 @@ type NotificationListener = (
 
 interface PendingRequest {
   readonly operation: HarnessErrorData["operation"];
+  readonly resumingThreadId?: string;
+  readonly timeout?: NodeJS.Timeout;
   readonly resolve: (result: unknown) => void;
-  readonly reject: (error: HarnessErrorData) => void;
+  readonly reject: (error: HarnessErrorData | ThreadClosingRejection) => void;
 }
+
+// Only the explicit native rejection below is safe to retry: it confirms that
+// resume has not executed. Never retry unknown outcomes or another native error.
+class ThreadClosingRejection extends Error {}
 
 export class CodexProcess implements LiveHarnessAdapter {
   readonly kind = "codex" as const;
+  readonly route = "native" as const;
   readonly #options: OfficialAdapterOptions;
   readonly #context: LiveHarnessAdapterContext;
   readonly #pending = new Map<number, PendingRequest>();
   readonly #notificationListeners = new Set<NotificationListener>();
   readonly #threadHandles = new Map<string, number>();
+  readonly #questionFeatureWarnings = new Map<string, "disabled" | "unknown">();
   #child: ChildProcessWithoutNullStreams | undefined;
   #processGroupId: number | undefined;
   #lines: Interface | undefined;
@@ -50,6 +60,7 @@ export class CodexProcess implements LiveHarnessAdapter {
   #nextRequestId = 1;
   #incoming: Promise<void> = Promise.resolve();
   #initialized = false;
+  readonly #shutdown = new AbortController();
 
   constructor(options: OfficialAdapterOptions, context: LiveHarnessAdapterContext) {
     this.#options = options;
@@ -146,13 +157,13 @@ export class CodexProcess implements LiveHarnessAdapter {
     if (options.effort !== undefined) {
       await this.validateEffort(options.effort, model, "createSession");
     }
+    await this.#checkQuestionFeature(nativeSessionId, options.workspacePath, "createSession");
     return new CodexSession(this, nativeSessionId, model, options.effort);
   }
 
   async resumeSession(options: AdapterResumeSessionOptions): Promise<AdapterSession> {
     const result = asObject(
-      await this.#request(
-        "thread/resume",
+      await this.#resumeThread(
         {
           threadId: options.nativeSessionId,
           cwd: options.workspacePath,
@@ -160,7 +171,6 @@ export class CodexProcess implements LiveHarnessAdapter {
           ...(options.model === undefined ? {} : { model: options.model }),
           approvalPolicy: mapApprovalPolicy(options.approvalPolicy),
         },
-        "resumeSession",
       ),
       "thread/resume result",
     );
@@ -173,7 +183,79 @@ export class CodexProcess implements LiveHarnessAdapter {
     if (options.effort !== undefined) {
       await this.validateEffort(options.effort, model, "resumeSession");
     }
+    await this.#checkQuestionFeature(options.nativeSessionId, options.workspacePath, "resumeSession");
     return new CodexSession(this, options.nativeSessionId, model, options.effort);
+  }
+
+  async #checkQuestionFeature(
+    threadId: string,
+    workspacePath: string,
+    operation: HarnessErrorData["operation"],
+  ): Promise<void> {
+    let enabled: boolean | undefined;
+    try {
+      const cursors = new Set<string>();
+      const deadline = Date.now() + questionFeatureCheckTimeoutMs;
+      let cursor: string | undefined;
+      for (;;) {
+        const remainingMs = deadline - Date.now();
+        if (remainingMs <= 0 || cursors.size >= 20) throw new Error("Codex feature discovery exceeded its bound");
+        const result = asObject(await this.#request(
+          "experimentalFeature/list",
+          { threadId, limit: 50, ...(cursor === undefined ? {} : { cursor }) },
+          operation,
+          remainingMs,
+        ), "experimentalFeature/list result");
+        if (!Array.isArray(result.data)) throw new Error("Codex feature list is invalid");
+        const feature = result.data.find((entry) => isObject(entry) && entry.name === questionFeatureName);
+        if (feature !== undefined) {
+          if (!isObject(feature) || typeof feature.enabled !== "boolean") {
+            throw new Error("Codex Question feature value is invalid");
+          }
+          enabled = feature.enabled;
+          break;
+        }
+        if (result.nextCursor === null || result.nextCursor === undefined) break;
+        cursor = requireString(result.nextCursor, "feature list cursor");
+        if (cursors.has(cursor)) throw new Error("Codex repeated a feature list cursor");
+        cursors.add(cursor);
+      }
+    } catch {
+      // Feature discovery is diagnostic, not a Session admission requirement.
+    }
+    if (enabled === true) {
+      this.#questionFeatureWarnings.delete(workspacePath);
+      return;
+    }
+    const warning = enabled === false ? "disabled" : "unknown";
+    if (this.#questionFeatureWarnings.get(workspacePath) === warning) return;
+    this.#questionFeatureWarnings.set(workspacePath, warning);
+    if (warning === "disabled") {
+      process.emitWarning(
+        "Codex's effective default_mode_request_user_input feature is disabled for this Workspace; native Questions may not be emitted. Enable it in Codex config (trusted project config overrides user config).",
+        { code: "MUHA_CODEX_QUESTION_FEATURE_DISABLED" },
+      );
+    } else {
+      process.emitWarning(
+        "Muha could not verify Codex's effective default_mode_request_user_input feature for this Workspace; native Question availability is unknown.",
+        { code: "MUHA_CODEX_QUESTION_FEATURE_UNKNOWN" },
+      );
+    }
+  }
+
+  async #resumeThread(params: JsonObject): Promise<unknown> {
+    // Unsubscribe acknowledges detachment, not completed unload. The native
+    // closing state can outlive that acknowledgement even with zero grace.
+    // Core's one-hour control watchdog bounds this loop and close aborts it.
+    for (;;) {
+      if (this.#shutdown.signal.aborted) throw failure("resumeSession", "ready", new Error("Codex is closing"));
+      try {
+        return await this.#request("thread/resume", params, "resumeSession");
+      } catch (error) {
+        if (!(error instanceof ThreadClosingRejection)) throw error;
+        await delay(10, undefined, { signal: this.#shutdown.signal });
+      }
+    }
   }
 
   retainThread(threadId: string): void {
@@ -188,6 +270,9 @@ export class CodexProcess implements LiveHarnessAdapter {
     }
     this.#threadHandles.delete(threadId);
     if (this.#closePromise || !this.#child || hasExited(this.#child)) return;
+    // With a zero native grace period, unsubscribe makes the next resume a
+    // fresh load. Unsubscribed connections do not receive unload notifications;
+    // the resume response remains the authority for applied permissions.
     const response = asObject(await this.#request("thread/unsubscribe", { threadId }, "closeSession"),
       "thread/unsubscribe result");
     if (!["notLoaded", "unsubscribed", "notSubscribed"].includes(String(response.status))) {
@@ -384,6 +469,7 @@ export class CodexProcess implements LiveHarnessAdapter {
   }
 
   close(): Promise<void> {
+    this.#shutdown.abort();
     this.#closePromise ??= this.#performClose();
     return this.#closePromise;
   }
@@ -392,14 +478,23 @@ export class CodexProcess implements LiveHarnessAdapter {
     method: string,
     params: JsonObject,
     operation: HarnessErrorData["operation"],
+    timeoutMs?: number,
   ): Promise<unknown> {
     const id = this.#nextRequestId++;
     return new Promise((resolve, reject) => {
-      this.#pending.set(id, { operation, resolve, reject });
+      const timeout = timeoutMs === undefined ? undefined : setTimeout(() => {
+        this.#pending.delete(id);
+        reject(failure(operation, "ready", new Error(`${method} timed out`)));
+      }, timeoutMs);
+      this.#pending.set(id, {
+        operation, ...(timeout === undefined ? {} : { timeout }), resolve, reject,
+        ...(method === "thread/resume" && typeof params.threadId === "string" ? { resumingThreadId: params.threadId } : {}),
+      });
       try {
         this.#write({ id, method, params });
       } catch (error) {
         this.#pending.delete(id);
+        if (timeout) clearTimeout(timeout);
         reject(failure(operation, "ready", error));
       }
     });
@@ -441,8 +536,14 @@ export class CodexProcess implements LiveHarnessAdapter {
       const pending = this.#pending.get(message.id);
       if (!pending) return;
       this.#pending.delete(message.id);
+      if (pending.timeout) clearTimeout(pending.timeout);
       if ("error" in message) {
         const native = isObject(message.error) ? message.error : {};
+        if (pending.resumingThreadId !== undefined && native.code === -32600 &&
+          native.message === `thread ${pending.resumingThreadId} is closing; retry thread/resume after the thread is closed`) {
+          pending.reject(new ThreadClosingRejection());
+          return;
+        }
         pending.reject({
           code: "HARNESS_ERROR",
           message: `Codex rejected ${pending.operation}`,
@@ -461,7 +562,10 @@ export class CodexProcess implements LiveHarnessAdapter {
   }
 
   #rejectAll(error: HarnessErrorData): void {
-    for (const pending of this.#pending.values()) pending.reject({ ...error, operation: pending.operation });
+    for (const pending of this.#pending.values()) {
+      if (pending.timeout) clearTimeout(pending.timeout);
+      pending.reject({ ...error, operation: pending.operation });
+    }
     this.#pending.clear();
   }
 
@@ -628,6 +732,9 @@ class CodexTurnCapture implements AdapterTurn {
         } else if (answer.kind === "custom") {
           values = [answer.text];
         } else {
+          if (answer.kind !== "options" && answer.kind !== "optionsWithCustom") {
+            throw new Error("Codex Question answer kind is unsupported");
+          }
           values = answer.optionIndexes.map((index) => {
             const option = question.options[index];
             if (!option) throw new Error("Codex Question option index is invalid");
@@ -990,7 +1097,7 @@ interface PortableUsage {
   readonly reasoningTokens: number;
 }
 
-function readPortableUsage(value: JsonObject): PortableUsage {
+export function readPortableUsage(value: JsonObject): PortableUsage {
   return {
     inputTokens: requireNumber(value.inputTokens, "input tokens"),
     outputTokens: requireNumber(value.outputTokens, "output tokens"),
@@ -999,7 +1106,7 @@ function readPortableUsage(value: JsonObject): PortableUsage {
   };
 }
 
-function subtractUsage(left: PortableUsage, right: PortableUsage): PortableUsage {
+export function subtractUsage(left: PortableUsage, right: PortableUsage): PortableUsage {
   return {
     inputTokens: left.inputTokens - right.inputTokens,
     outputTokens: left.outputTokens - right.outputTokens,
@@ -1008,7 +1115,27 @@ function subtractUsage(left: PortableUsage, right: PortableUsage): PortableUsage
   };
 }
 
-function mapToolStarted(item: JsonObject, itemId: string): AdapterTurnEvent | undefined {
+export function mapToolStarted(item: JsonObject, itemId: string): AdapterTurnEvent | undefined {
+  if (item.type === "imageGeneration" || item.type === "contextCompaction") {
+    // These native display items expose no original tool arguments. Do not
+    // invent a prompt from a revised prompt or from bridge display text.
+    return { type: "tool.started", nativeToolCallId: itemId, toolName: item.type, input: {} };
+  }
+  if (item.type === "collabAgentToolCall") {
+    return { type: "tool.started", nativeToolCallId: itemId, toolName: requireString(item.tool, "collaboration tool"),
+      input: nativeFields(item, ["senderThreadId", "receiverThreadIds", "prompt", "model", "reasoningEffort"]) };
+  }
+  if (item.type === "subAgentActivity") {
+    return { type: "tool.started", nativeToolCallId: itemId, toolName: "subAgentActivity",
+      input: nativeFields(item, ["agentThreadId", "agentPath", "kind"]) };
+  }
+  if (item.type === "imageView") {
+    return { type: "tool.started", nativeToolCallId: itemId, toolName: "imageView", input: { path: requireString(item.path, "image path") } };
+  }
+  if (item.type === "webSearch") {
+    return { type: "tool.started", nativeToolCallId: itemId, toolName: "webSearch",
+      input: { query: requireString(item.query, "web search query"), ...(item.action === undefined ? {} : { action: item.action }) } };
+  }
   if (item.type === "commandExecution") {
     return {
       type: "tool.started",
@@ -1057,7 +1184,30 @@ function mapToolUpdate(method: string, params: JsonObject): AdapterTurnEvent | u
   return undefined;
 }
 
-function mapToolCompleted(item: JsonObject, itemId: string): AdapterTurnEvent | undefined {
+export function mapToolCompleted(item: JsonObject, itemId: string): AdapterTurnEvent | undefined {
+  if (item.type === "imageGeneration") {
+    return { type: "tool.completed", nativeToolCallId: itemId,
+      output: nativeFields(item, ["status", "result", "revisedPrompt", "savedPath", "transparentBackground", "failure"]), isError: item.status === "failed" };
+  }
+  if (item.type === "contextCompaction") {
+    return { type: "tool.completed", nativeToolCallId: itemId, output: {}, isError: false };
+  }
+  if (item.type === "collabAgentToolCall") {
+    return { type: "tool.completed", nativeToolCallId: itemId,
+      output: nativeFields(item, ["status", "agentsStates"]), isError: item.status === "failed" };
+  }
+  if (item.type === "subAgentActivity") {
+    return { type: "tool.completed", nativeToolCallId: itemId,
+      output: nativeFields(item, ["agentThreadId", "agentPath", "kind"]), isError: item.kind === "interrupted" };
+  }
+  if (item.type === "imageView") {
+    return { type: "tool.completed", nativeToolCallId: itemId, output: { path: requireString(item.path, "image path") }, isError: false };
+  }
+  if (item.type === "webSearch") {
+    return { type: "tool.completed", nativeToolCallId: itemId,
+      output: { query: requireString(item.query, "web search query"), ...(item.action === undefined ? {} : { action: item.action }),
+        ...(item.results === undefined ? {} : { results: item.results }) }, isError: false };
+  }
   if (item.type === "commandExecution") {
     return {
       type: "tool.completed",
@@ -1096,6 +1246,10 @@ function mapToolCompleted(item: JsonObject, itemId: string): AdapterTurnEvent | 
     };
   }
   return undefined;
+}
+
+function nativeFields(item: JsonObject, keys: readonly string[]): JsonObject {
+  return Object.fromEntries(keys.filter(key => Object.hasOwn(item, key)).map(key => [key, item[key]]));
 }
 
 function isTerminalToolSnapshot(item: JsonObject): boolean {

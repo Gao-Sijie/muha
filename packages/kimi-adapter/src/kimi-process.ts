@@ -10,6 +10,7 @@ import type {
   AdapterListedSession,
   AdapterQuestionAnswer,
   AdapterQuestionItem,
+  AdapterLegacyQuestionItem,
   AdapterQuestionResponse,
   AdapterResumeSessionOptions,
   AdapterSession,
@@ -26,6 +27,7 @@ type JsonObject = Record<string, unknown>;
 
 export class KimiProcess implements LiveHarnessAdapter {
   readonly kind = "kimi" as const;
+  readonly route = "native" as const;
   readonly #listeners = new Map<string, Set<(event: JsonObject) => void>>();
   readonly #pendingAcks = new Map<string, {
     resolve: (value: JsonObject) => void;
@@ -143,11 +145,7 @@ export class KimiProcess implements LiveHarnessAdapter {
     if (options.effort !== undefined) {
       await this.validateEffort(options.effort, model, "createSession");
     }
-    const permissionMode = await this.#applyApprovalPolicy(
-      nativeSessionId,
-      options.approvalPolicy,
-      "createSession",
-    );
+    const permissionMode = await this.#applyApprovalPolicy(nativeSessionId, options.approvalPolicy, "createSession");
     await this.#subscribe(nativeSessionId);
     const result = new KimiSession(
       this,
@@ -183,11 +181,7 @@ export class KimiProcess implements LiveHarnessAdapter {
     if (options.effort !== undefined) {
       await this.validateEffort(options.effort, model, "resumeSession");
     }
-    const permissionMode = await this.#applyApprovalPolicy(
-      session.id,
-      options.approvalPolicy,
-      "resumeSession",
-    );
+    const permissionMode = await this.#applyApprovalPolicy(session.id, options.approvalPolicy, "resumeSession");
     await this.#subscribe(session.id);
     const result = new KimiSession(
       this,
@@ -286,12 +280,8 @@ export class KimiProcess implements LiveHarnessAdapter {
     operation: "createSession" | "resumeSession",
   ): Promise<"auto" | "manual"> {
     const mode = policy === "autoApprove" ? "auto" : "manual";
-    await this.requestData(
-      "POST",
-      `/api/v1/sessions/${encodeURIComponent(nativeSessionId)}/profile`,
-      operation,
-      { agent_config: { permission_mode: mode } },
-    );
+    await this.requestData("POST", `/api/v1/sessions/${encodeURIComponent(nativeSessionId)}/profile`,
+      operation, { agent_config: { permission_mode: mode } });
     return mode;
   }
 
@@ -317,11 +307,7 @@ export class KimiProcess implements LiveHarnessAdapter {
     operation: HarnessErrorData["operation"],
   ): Promise<void> {
     if (model === undefined) {
-      throw harnessCommandFailure(
-        operation,
-        "Kimi cannot validate Effort without a resolved Model",
-        "model_unresolved",
-      );
+      throw harnessCommandFailure(operation, "Kimi cannot validate Effort without a resolved Model", "model_unresolved");
     }
     const data = asObjectProtocol(
       await this.requestData("GET", "/api/v1/models", operation),
@@ -496,7 +482,9 @@ export class KimiProcess implements LiveHarnessAdapter {
         }
         if (frame.type === "error") {
           const payload = asObjectProtocol(frame.payload, "Kimi WebSocket error");
-          if (payload.fatal === true) this.#declarePermanentLoss("Kimi WebSocket reported a fatal error");
+          if (payload.fatal === true) {
+            this.#declarePermanentLoss("Kimi WebSocket reported a fatal error");
+          }
           return;
         }
         if (typeof frame.session_id === "string" && typeof frame.type === "string") {
@@ -601,7 +589,9 @@ export class KimiProcess implements LiveHarnessAdapter {
       this.options.startupTimeoutMs ?? defaultTimeoutMs,
       () => protocolFailure("Kimi WebSocket recovery timed out"),
     ).catch((error) => {
-      this.#declarePermanentLoss(isErrorWithMessage(error) ? error.message : "Kimi WebSocket recovery failed");
+      this.#declarePermanentLoss(
+        isErrorWithMessage(error) ? error.message : "Kimi WebSocket recovery failed",
+      );
       throw error;
     }).finally(() => {
       if (this.#reconnectPromise === recovery) this.#reconnectPromise = undefined;
@@ -618,16 +608,26 @@ export class KimiProcess implements LiveHarnessAdapter {
       for (const listener of [...(this.#listeners.get(nativeSessionId) ?? [])]) listener(frame);
       return;
     }
-    if (frame.volatile !== undefined && frame.volatile !== false) throw new Error("Kimi event volatile flag must be boolean");
+    if (frame.volatile !== undefined && frame.volatile !== false) {
+      throw new Error("Kimi event volatile flag must be boolean");
+    }
     const cursor = this.#cursors.get(nativeSessionId);
     if (cursor !== undefined) {
       if (cursor.epoch !== undefined && epoch !== undefined && cursor.epoch !== epoch) {
-        this.#handleResync(nativeSessionId, { seq, ...(epoch === undefined ? {} : { epoch }) }, "Kimi event epoch changed");
+        this.#handleResync(
+          nativeSessionId,
+          { seq, ...(epoch === undefined ? {} : { epoch }) },
+          "Kimi event epoch changed",
+        );
         return;
       }
       if (seq <= cursor.seq) return;
       if (seq !== cursor.seq + 1) {
-        this.#handleResync(nativeSessionId, { seq, ...(epoch === undefined ? {} : { epoch }) }, "Kimi event sequence has a gap");
+        this.#handleResync(
+          nativeSessionId,
+          { seq, ...(epoch === undefined ? {} : { epoch }) },
+          "Kimi event sequence has a gap",
+        );
         return;
       }
     }
@@ -652,7 +652,9 @@ export class KimiProcess implements LiveHarnessAdapter {
     cursor: { seq: number; epoch?: string } | undefined,
     message: string,
   ): void {
-    if ((this.#listeners.get(nativeSessionId)?.size ?? 0) > 0) this.#failSession(nativeSessionId, message);
+    if ((this.#listeners.get(nativeSessionId)?.size ?? 0) > 0) {
+      this.#failSession(nativeSessionId, message);
+    }
     if (cursor !== undefined) this.#cursors.set(nativeSessionId, cursor);
   }
 
@@ -792,7 +794,9 @@ class KimiSession implements AdapterSession {
     return Promise.resolve();
   }
 
-  closeAfterStreamFailure(): void { this.#closed = true; }
+  closeAfterStreamFailure(): void {
+    this.#closed = true;
+  }
 }
 
 class KimiTurnCapture implements AdapterTurn {
@@ -812,7 +816,11 @@ class KimiTurnCapture implements AdapterTurn {
   #usage = { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 };
   #disposed = false;
 
-  constructor(readonly process: KimiProcess, readonly session: KimiSession) {}
+  constructor(
+    readonly process: KimiProcess,
+    readonly session: KimiSession,
+  ) {}
+
   get nativeTurnId(): string { return this.#nativeTurnId; }
   setNativeTurnId(value: string): void { this.#nativeTurnId = value; }
   attach(unsubscribe: () => void): void { this.#unsubscribe = unsubscribe; }
@@ -822,7 +830,10 @@ class KimiTurnCapture implements AdapterTurn {
     try {
       if (envelope.type === "adapter.protocolError") {
         this.session.closeAfterStreamFailure();
-        void this.process.abortTurn(this.session.nativeSessionId, this.#nativeTurnId).catch(() => undefined);
+        void this.process.abortTurn(
+          this.session.nativeSessionId,
+          this.#nativeTurnId,
+        ).catch(() => undefined);
         this.#push({
           type: "adapter.protocolError",
           message: requireProtocolString(envelope.message, "Kimi protocol error message"),
@@ -832,7 +843,9 @@ class KimiTurnCapture implements AdapterTurn {
       }
       const payload = asObjectProtocol(envelope.payload, "Kimi event payload");
       if (payload.agentId !== undefined) {
-        if (typeof payload.agentId !== "string") throw new Error("Kimi event agent id must be a string");
+        if (typeof payload.agentId !== "string") {
+          throw new Error("Kimi event agent id must be a string");
+        }
         if (payload.agentId !== "main") return;
       }
       if (envelope.type === "turn.started") {
@@ -983,7 +996,10 @@ class KimiTurnCapture implements AdapterTurn {
         });
         return;
       }
-      if (envelope.type === "event.question.answered" || envelope.type === "event.question.dismissed") {
+      if (
+        envelope.type === "event.question.answered" ||
+        envelope.type === "event.question.dismissed"
+      ) {
         const nativeRequestId = requireProtocolString(payload.question_id, "Kimi Question id");
         if (!this.#locallyResolvedQuestions.has(nativeRequestId)) {
           this.#push({
@@ -1001,7 +1017,10 @@ class KimiTurnCapture implements AdapterTurn {
           outputTokens: this.#usage.outputTokens + tokenCount(usage.output, "output"),
           cachedInputTokens: this.#usage.cachedInputTokens + tokenCount(usage.inputCacheRead, "cached input"),
         };
-        this.#push({ type: "usage.updated", usage: this.#usage });
+        this.#push({
+          type: "usage.updated",
+          usage: this.#usage,
+        });
         return;
       }
       if (envelope.type === "turn.ended") {
@@ -1076,7 +1095,10 @@ class KimiTurnCapture implements AdapterTurn {
   #startAssistant(payload: JsonObject): void {
     if (this.#assistantStarted) return;
     this.#assistantStarted = true;
-    this.#push({ type: "assistant.message.started", nativeMessageId: this.#messageId(payload) });
+    this.#push({
+      type: "assistant.message.started",
+      nativeMessageId: this.#messageId(payload),
+    });
   }
 
   #messageId(payload: JsonObject): string {
@@ -1103,15 +1125,18 @@ class AsyncQueue<T> implements AsyncIterable<T> {
   readonly #values: T[] = [];
   readonly #waiters: Array<(result: IteratorResult<T>) => void> = [];
   #ended = false;
+
   push(value: T): void {
     const waiter = this.#waiters.shift();
     if (waiter) waiter({ value, done: false });
     else this.#values.push(value);
   }
+
   end(): void {
     this.#ended = true;
     for (const waiter of this.#waiters.splice(0)) waiter({ value: undefined, done: true });
   }
+
   [Symbol.asyncIterator](): AsyncIterator<T> {
     return {
       next: () => {
@@ -1127,7 +1152,7 @@ class AsyncQueue<T> implements AsyncIterable<T> {
 interface NativeKimiQuestion {
   readonly id: string;
   readonly optionIds: readonly string[];
-  readonly item: AdapterQuestionItem;
+  readonly item: AdapterLegacyQuestionItem;
 }
 
 function mapKimiQuestion(value: unknown): NativeKimiQuestion {
@@ -1185,6 +1210,9 @@ function mapQuestionResponseToKimi(
       result[question.id] = { kind: "other", text: answer.text };
       continue;
     }
+    if (answer.kind !== "options" && answer.kind !== "optionsWithCustom") {
+      throw protocolFailure("Kimi Question answer kind is unsupported");
+    }
     const optionIds = answer.optionIndexes.map((index) => {
       const optionId = question.optionIds[index];
       if (!optionId) throw protocolFailure("Kimi Question option index is invalid");
@@ -1223,11 +1251,21 @@ async function validateSession(value: unknown, workspacePath: string): Promise<{
   } catch {
     throw protocolFailure("Kimi Session Workspace cannot be canonicalized");
   }
-  if (nativeWorkspacePath !== workspacePath) throw protocolFailure("Kimi Session belongs to a different Workspace");
-  if (session.title !== undefined && typeof session.title !== "string") throw protocolFailure("Kimi Session title must be a string");
-  const title = typeof session.title === "string" && session.title.length > 0 ? session.title : undefined;
-  const createdAt = session.created_at === undefined ? undefined : rfc3339(session.created_at, "created_at");
-  const updatedAt = session.updated_at === undefined ? undefined : rfc3339(session.updated_at, "updated_at");
+  if (nativeWorkspacePath !== workspacePath) {
+    throw protocolFailure("Kimi Session belongs to a different Workspace");
+  }
+  if (session.title !== undefined && typeof session.title !== "string") {
+    throw protocolFailure("Kimi Session title must be a string");
+  }
+  const title = typeof session.title === "string" && session.title.length > 0
+    ? session.title
+    : undefined;
+  const createdAt = session.created_at === undefined
+    ? undefined
+    : rfc3339(session.created_at, "created_at");
+  const updatedAt = session.updated_at === undefined
+    ? undefined
+    : rfc3339(session.updated_at, "updated_at");
   return {
     id,
     ...(title === undefined ? {} : { title }),
@@ -1255,17 +1293,29 @@ async function mapTurnInput(input: AdapterTurnInput): Promise<JsonObject> {
     throw harnessCommandFailure("startTurn", "Kimi image file became unreadable", "image_unreadable");
   }
   const mediaType = detectImageMediaType(bytes);
-  if (mediaType === undefined) throw harnessCommandFailure("startTurn", "Kimi image file changed after validation", "image_invalid");
+  if (mediaType === undefined) {
+    throw harnessCommandFailure("startTurn", "Kimi image file changed after validation", "image_invalid");
+  }
   return {
     type: "image",
     source: { kind: "base64", media_type: mediaType, data: bytes.toString("base64") },
   };
 }
 
-function detectImageMediaType(bytes: Uint8Array): "image/png" | "image/jpeg" | "image/webp" | "image/gif" | undefined {
-  if (bytes.length >= 8 && Buffer.from(bytes.subarray(0, 8)).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
-  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
-  if (bytes.length >= 12 && Buffer.from(bytes.subarray(0, 4)).toString("ascii") === "RIFF" && Buffer.from(bytes.subarray(8, 12)).toString("ascii") === "WEBP") return "image/webp";
+function detectImageMediaType(
+  bytes: Uint8Array,
+): "image/png" | "image/jpeg" | "image/webp" | "image/gif" | undefined {
+  if (bytes.length >= 8 && Buffer.from(bytes.subarray(0, 8)).equals(
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+  )) return "image/png";
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return "image/jpeg";
+  }
+  if (
+    bytes.length >= 12 &&
+    Buffer.from(bytes.subarray(0, 4)).toString("ascii") === "RIFF" &&
+    Buffer.from(bytes.subarray(8, 12)).toString("ascii") === "WEBP"
+  ) return "image/webp";
   if (bytes.length >= 6) {
     const signature = Buffer.from(bytes.subarray(0, 6)).toString("ascii");
     if (signature === "GIF87a" || signature === "GIF89a") return "image/gif";
@@ -1322,21 +1372,30 @@ function asObjectProtocol(value: unknown, description: string): JsonObject {
   if (!isObject(value)) throw protocolFailure(`${description} must be an object`);
   return value;
 }
+
 function requireProtocolString(value: unknown, description: string, allowEmpty = false): string {
   if (typeof value !== "string" || (!allowEmpty && value.length === 0)) {
     throw protocolFailure(`${description} must be ${allowEmpty ? "a" : "a non-empty"} string`);
   }
   return value;
 }
+
 function optionalProtocolString(value: unknown, description: string): string | undefined {
   if (value === undefined || value === null || value === "") return undefined;
   return requireProtocolString(value, description);
 }
+
 function requireSequence(value: unknown, description: string): number {
-  if (!Number.isSafeInteger(value) || (value as number) < 0) throw protocolFailure(`${description} must be a non-negative integer`);
+  if (!Number.isSafeInteger(value) || (value as number) < 0) {
+    throw protocolFailure(`${description} must be a non-negative integer`);
+  }
   return value as number;
 }
-function readServerCursor(value: unknown, nativeSessionId: string): { seq: number; epoch?: string } | undefined {
+
+function readServerCursor(
+  value: unknown,
+  nativeSessionId: string,
+): { seq: number; epoch?: string } | undefined {
   if (value === undefined) return undefined;
   const cursors = asObjectProtocol(value, "Kimi subscription cursors");
   if (cursors[nativeSessionId] === undefined) return undefined;
@@ -1347,20 +1406,35 @@ function readServerCursor(value: unknown, nativeSessionId: string): { seq: numbe
     ...(epoch === undefined ? {} : { epoch }),
   };
 }
+
 function isErrorWithMessage(value: unknown): value is { readonly message: string } {
   return isObject(value) && typeof value.message === "string";
 }
+
 function tokenCount(value: unknown, description: string): number {
-  if (!Number.isSafeInteger(value) || (value as number) < 0) throw new Error(`Kimi ${description} token count is invalid`);
+  if (!Number.isSafeInteger(value) || (value as number) < 0) {
+    throw new Error(`Kimi ${description} token count is invalid`);
+  }
   return value as number;
 }
+
 function isObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-function protocolFailure(message: string): { readonly code: "ADAPTER_PROTOCOL_ERROR"; readonly message: string; readonly harness: "kimi" } {
+
+function protocolFailure(message: string): {
+  readonly code: "ADAPTER_PROTOCOL_ERROR";
+  readonly message: string;
+  readonly harness: "kimi";
+} {
   return { code: "ADAPTER_PROTOCOL_ERROR", message, harness: "kimi" };
 }
-function harnessCommandFailure(operation: HarnessErrorData["operation"], message: string, nativeCode?: string): HarnessErrorData {
+
+function harnessCommandFailure(
+  operation: HarnessErrorData["operation"],
+  message: string,
+  nativeCode?: string,
+): HarnessErrorData {
   return {
     code: "HARNESS_ERROR",
     message,
@@ -1370,13 +1444,26 @@ function harnessCommandFailure(operation: HarnessErrorData["operation"], message
     ...(nativeCode === undefined ? {} : { nativeCode }),
   };
 }
+
 function normalizeSessionLookupFailure(error: unknown): unknown {
-  if (typeof error === "object" && error !== null && "code" in error && error.code === "HARNESS_ERROR" && "nativeCode" in error && error.nativeCode === "http_404") {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "HARNESS_ERROR" &&
+    "nativeCode" in error &&
+    error.nativeCode === "http_404"
+  ) {
     return { ...error, nativeCode: "session_not_found" };
   }
   return error;
 }
-function failure(operation: HarnessErrorData["operation"], stage: NonNullable<HarnessErrorData["stage"]>, _error: unknown): HarnessErrorData {
+
+function failure(
+  operation: HarnessErrorData["operation"],
+  stage: NonNullable<HarnessErrorData["stage"]>,
+  _error: unknown,
+): HarnessErrorData {
   return {
     code: "HARNESS_ERROR",
     message: `Kimi ${stage} failed`,
@@ -1386,43 +1473,63 @@ function failure(operation: HarnessErrorData["operation"], stage: NonNullable<Ha
     stage,
   };
 }
-function normalizeHarnessFailure(error: unknown, operation: HarnessErrorData["operation"], stage: NonNullable<HarnessErrorData["stage"]>): HarnessErrorData {
+
+function normalizeHarnessFailure(
+  error: unknown,
+  operation: HarnessErrorData["operation"],
+  stage: NonNullable<HarnessErrorData["stage"]>,
+): HarnessErrorData {
   if (isObject(error) && error.code === "HARNESS_ERROR") return error as unknown as HarnessErrorData;
   return failure(operation, stage, error);
 }
+
 function waitForExit(child: ChildProcessWithoutNullStreams): Promise<void> {
   if (hasExited(child)) return Promise.resolve();
   return new Promise((resolve) => child.once("exit", () => resolve()));
 }
+
 function hasExited(child: ChildProcessWithoutNullStreams): boolean {
   return child.exitCode !== null || child.signalCode !== null;
 }
-async function withTimeout<T>(operation: Promise<T>, milliseconds: number, createError: () => unknown): Promise<T> {
+
+async function withTimeout<T>(
+  operation: Promise<T>,
+  milliseconds: number,
+  createError: () => unknown,
+): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   try {
     return await Promise.race([
       operation,
-      new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(createError()), milliseconds); }),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(createError()), milliseconds);
+      }),
     ]);
   } finally {
     if (timer) clearTimeout(timer);
   }
 }
+
 async function exitsWithin(child: ChildProcessWithoutNullStreams, milliseconds: number): Promise<boolean> {
   let timer: NodeJS.Timeout | undefined;
   try {
     return await Promise.race([
       waitForExit(child).then(() => true),
-      new Promise<false>((resolve) => { timer = setTimeout(() => resolve(false), milliseconds); }),
+      new Promise<false>((resolve) => {
+        timer = setTimeout(() => resolve(false), milliseconds);
+      }),
     ]);
   } finally {
     if (timer) clearTimeout(timer);
   }
 }
+
 function signalProcessGroup(pid: number, signal: NodeJS.Signals): void {
   try {
     process.kill(-pid, signal);
   } catch (error) {
-    if (!isObject(error) || error.code !== "ESRCH") throw failure("closeHarness", "shutdown", error);
+    if (!isObject(error) || error.code !== "ESRCH") {
+      throw failure("closeHarness", "shutdown", error);
+    }
   }
 }

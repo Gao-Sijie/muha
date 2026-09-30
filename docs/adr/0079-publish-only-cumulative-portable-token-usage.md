@@ -1,0 +1,3 @@
+# Publish Only Cumulative Portable Token Usage
+
+`TurnUsage` contains optional non-negative safe-integer `inputTokens`, `outputTokens`, `cachedInputTokens`, and `reasoningTokens`, with at least one field present. `usage.updated` carries a cumulative current-Turn snapshot only when a value changes, but snapshots need not be monotonic because a Harness may correct estimates; cached input and reasoning are optional native-reported subdivisions and Core never derives them. Muha exposes no price, currency, context window, cache-write count, billing detail, or native usage payload. A Harness without usage emits no event and yields no final usage; otherwise terminal event and result usage equal the last snapshot.

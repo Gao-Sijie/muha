@@ -1,0 +1,5 @@
+# Use Core-Identified Structured Question Requests
+
+Status: superseded by ADR-0139 for the public Question field shape; Core-generated identities and private native IDs remain in force.
+
+`QuestionRequest` is exactly `{ requestId: string; questions: readonly [QuestionItem, ...QuestionItem[]]; toolCallId?: string }`, where `QuestionItem` is `{ questionId: string; header?: string; question: string; description?: string; options: readonly QuestionOption[]; multiple: boolean; allowCustom: boolean }` and `QuestionOption` is `{ optionId: string; label: string; description?: string }`. Core generates every request, question, and option ID within the Turn and keeps native IDs private. Question text and option labels are non-empty, optional header and description are non-empty when present, and an empty options array is valid only when `allowCustom` is true; explicit booleans prevent callers from depending on vendor defaults. `toolCallId` is present only for an already-started related Tool. Kimi `body` maps to description, and Adapters generate Core option IDs even when the native protocol has only labels.

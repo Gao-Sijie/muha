@@ -1,0 +1,263 @@
+{
+  "realTestedSource": "8fa1a52aee74200e11c39e91c1ac7650bf31e1c4",
+  "snapshotSource": "1c59b2d48f14ba508d3dafb93bb2e4455cdba6a1",
+  "algorithm": "SHA256",
+  "runtime": [
+    {
+      "path": "packages/agy-adapter/scripts/build-native.mjs",
+      "sha256": "6e5c7fe68805ab251d867654991fc1fa9ded42e5af2a21082233aeefea9600a0"
+    },
+    {
+      "path": "packages/agy-adapter/src/agy-process.ts",
+      "sha256": "b6e67f801f9fda9ee66165c2a9d4ebab5adb2596b23aa601cd865dc8903c761d"
+    },
+    {
+      "path": "packages/agy-adapter/src/index.ts",
+      "sha256": "33b029cd402b98e6d61276f02ea6424b1867a5fcec4394d241039a103b2db2f3"
+    },
+    {
+      "path": "packages/agy-adapter/src/native-metadata.ts",
+      "sha256": "91d608ccf1640f0187fa54fca3923d777bce3e1ed11f2b42a323392372d713ec"
+    },
+    {
+      "path": "packages/agy-adapter/src/owned-cli.ts",
+      "sha256": "f1143d4d983b4e53f1f34a82004189ee90d41157a3ed44a8a9bb86a87c484f0e"
+    },
+    {
+      "path": "packages/agy-adapter/src/protocol.ts",
+      "sha256": "ff5f20056120260c455702cecec3dd4a5da29faf4c7e41e390e7e25552857851"
+    },
+    {
+      "path": "packages/codex-adapter/scripts/build-observer.mjs",
+      "sha256": "73d505420fc7f00e369764381e9f95c069e0219f0c016d8fb1c25aa7a65fd997"
+    },
+    {
+      "path": "packages/codex-adapter/src/acp-question.ts",
+      "sha256": "c8f45fa7bd4139ad5ffb3d4a203bbd835939682e46ab95d993edc16adebdcbed"
+    },
+    {
+      "path": "packages/codex-adapter/src/codex-acp.ts",
+      "sha256": "646ce8f809468fefeaf8b3b9ce81e0f16000fca57660575040f1af8ea2cd7441"
+    },
+    {
+      "path": "packages/codex-adapter/src/codex-bridge.ts",
+      "sha256": "1fe03f6d02a3b4909fd3457bc9811b0661775646b4ccd6b63d474f8039d7aa9f"
+    },
+    {
+      "path": "packages/codex-adapter/src/codex-observer-wire.ts",
+      "sha256": "f5ded0d752d4bac583e947abe46c659621386ac840a7578907fce21f8133fdb8"
+    },
+    {
+      "path": "packages/codex-adapter/src/codex-observer-worker.ts",
+      "sha256": "39b2f67b142f94c8189bbb2029d00a61b48d9ceade0a62c4cbac70a686c777c6"
+    },
+    {
+      "path": "packages/codex-adapter/src/codex-observer.ts",
+      "sha256": "79727725e7f94f37da4f8978609de8223545b873c42d3d7182ab7f5ab6b130cb"
+    },
+    {
+      "path": "packages/codex-adapter/src/codex-process.ts",
+      "sha256": "5789cca2c17acc4c52bf2b91ecccc686175aa0cd852c187ef07666a9d2431174"
+    },
+    {
+      "path": "packages/codex-adapter/src/index.ts",
+      "sha256": "48e2f1e845df2f75c74e2f61eefae683ec1ec38cc2b6fd7ea9dfcd0865092522"
+    },
+    {
+      "path": "packages/core/native/glibc-startup-compat.c",
+      "sha256": "ea8b6ad5fc875e8ebd6a75e2dd930bebe6971e1a33bbb0d30da2335aedfe91cc"
+    },
+    {
+      "path": "packages/core/native/supervisor.c",
+      "sha256": "da7143cdef2500282827405adc87564bd179c5773e7fd9d0da4d57b2e98b5518"
+    },
+    {
+      "path": "packages/core/scripts/build-native.mjs",
+      "sha256": "eaccb8063ebffc75d548e0931c7ad5273c114be3e15745af74906536b8972374"
+    },
+    {
+      "path": "packages/core/src/acp/connection.ts",
+      "sha256": "b3aaf6ae040fedcbbf4a64137602459bdc14e53809ad64558416a7842ceb282c"
+    },
+    {
+      "path": "packages/core/src/acp/driver.ts",
+      "sha256": "cbc52af64c4a5243c97954fa24cb4afe524ff95536ab7b91841c6566370edd55"
+    },
+    {
+      "path": "packages/core/src/acp/input.ts",
+      "sha256": "e51a7a46c0b9ff24331e01646f87a7f031340f5c242b13a6f9941e56e4c3167e"
+    },
+    {
+      "path": "packages/core/src/acp/owned-process.ts",
+      "sha256": "0be1c92945f0054fe7b6fbd423fd43b1d065207b61ccec0ae457633d6c4e6fb1"
+    },
+    {
+      "path": "packages/core/src/acp/types.ts",
+      "sha256": "087674f2f0e386e000f76da8ada4ab4daefb49b5186307c66bc27a3326bfaa72"
+    },
+    {
+      "path": "packages/core/src/capabilities.ts",
+      "sha256": "96b8107aa9fc19226ed1c5504e8214867cb6162c3b7c63e6a1739ddb7ca93556"
+    },
+    {
+      "path": "packages/core/src/control.ts",
+      "sha256": "1db5ff8aa9de205ebea09b7fae142b3791bd25e36c89acf2f4a2385519447327"
+    },
+    {
+      "path": "packages/core/src/errors.ts",
+      "sha256": "a4222d797d30321453e516ed54be5e54bd7798b9f1fc9c30d4e4824d92367c1d"
+    },
+    {
+      "path": "packages/core/src/event-store.ts",
+      "sha256": "caaeaa977b88abfe516331abc023da08a638a68333057a285df442cc2a12fa3f"
+    },
+    {
+      "path": "packages/core/src/harness-catalog.ts",
+      "sha256": "e74a33606822d6c8e22082fd57c5acc026446f5bbdde2c32e5c793db06e49774"
+    },
+    {
+      "path": "packages/core/src/index.ts",
+      "sha256": "0a6b148a07049f5e984dc95b8fc7ce2766e31c612fa39a2b5f81b0e0df4908d6"
+    },
+    {
+      "path": "packages/core/src/internal.ts",
+      "sha256": "3db4ced4ad3507f3459404ce380d2f19d7d58fcd82b8d8259330b88fc39791af"
+    },
+    {
+      "path": "packages/core/src/platform.ts",
+      "sha256": "5eac38ad8d918601bed884237a9d25fb7748c03bf967ad09bd6a9312f7be4fb4"
+    },
+    {
+      "path": "packages/core/src/reference.ts",
+      "sha256": "38bd2e978e755027656b5ac28162d32c9841fe7368f04947ddcf6e22035b4ed5"
+    },
+    {
+      "path": "packages/core/src/runtime.ts",
+      "sha256": "a2e9a83f7e98cf19dc20b7c9167418b1221318de573a205c9ff08299b15a05fd"
+    },
+    {
+      "path": "packages/core/src/scheduler.ts",
+      "sha256": "d6da7300e70410226f7291c4abd2403cbdc27b596c5eaf036edbb338ebe7c3a8"
+    },
+    {
+      "path": "packages/core/src/session.ts",
+      "sha256": "b022a510365162ce19fedc3828f590c8656c7de2efeaf5a920e241986438304b"
+    },
+    {
+      "path": "packages/core/src/workspace-configurator.ts",
+      "sha256": "68ef111b538fb69e0cadb8c3f30516519c45b9a70634b817712e819ce1fa3e05"
+    },
+    {
+      "path": "packages/core/src/workspace-mcp-worker.ts",
+      "sha256": "dd3a1b589838e8b71e4179791c9752aa38890568a6ee384e90b0ecf7c34c2f41"
+    },
+    {
+      "path": "packages/kimi-adapter/src/index.ts",
+      "sha256": "1908c70548dd8158ebda9bdd0b0baa7c8f97e95a8d3df2a0b8024c3a35f58e5e"
+    },
+    {
+      "path": "packages/kimi-adapter/src/kimi-process.ts",
+      "sha256": "b7d98c9bb5fe4375bd035107f141a137522589a1bc25791db4ba2a497af8265a"
+    },
+    {
+      "path": "packages/kimi-adapter/src/workspace-configurator.ts",
+      "sha256": "2588ebd95714256a7d49f8940949afa33782ad47c7195393d7e9f9e420ca24c2"
+    },
+    {
+      "path": "packages/kimi-adapter/src/workspace-mcp-worker.ts",
+      "sha256": "ca7d000271fc1c9508b88c1929acf9474bd67ffcff8ba15a3e5896b5e5513bea"
+    },
+    {
+      "path": "packages/opencode-adapter/src/index.ts",
+      "sha256": "28952c7f19de5e116eb4a3ef61408e6eb5f78da669cdd9a8786177d409020a34"
+    },
+    {
+      "path": "packages/opencode-adapter/src/opencode-acp.ts",
+      "sha256": "4ba43200d4eccd34ef4c8222db9991f04398a5e93cbeee2bd939adb87fba6cd2"
+    },
+    {
+      "path": "packages/opencode-adapter/src/opencode-process.ts",
+      "sha256": "013ca98b9cfe4e5db8454cd28a430a8e2d70c451212c0b5b12108d15cbdde83c"
+    },
+    {
+      "path": "packages/opencode-adapter/src/opencode-v2-api.ts",
+      "sha256": "1ab47ff14ca27043c6bd29e6804f0e8c13786c53e3afc28b0b35d5ca9149f6bf"
+    },
+    {
+      "path": "packages/opencode-adapter/src/opencode-v2-image-input.ts",
+      "sha256": "3faf4aeed5861acf79908731d0ecd7d0b5a1ab58d504cf864fc84c499caab770"
+    },
+    {
+      "path": "packages/opencode-adapter/src/opencode-v2-order-plugin.ts",
+      "sha256": "345d691523d5fd822d5cfafbc50ee734944e6b5c0a10350e288deb7069f29287"
+    },
+    {
+      "path": "packages/opencode-adapter/src/opencode-v2-service.ts",
+      "sha256": "c0e954cc147fc06cc7d37eb1228387c2e3ada01a08fb41f6609152dc74094e82"
+    },
+    {
+      "path": "packages/opencode-adapter/src/opencode-v2-turn.ts",
+      "sha256": "27eed1a5f3e20eddeead0c1e068383bfd6299719f3f5a3c17b03132d258b1aff"
+    },
+    {
+      "path": "packages/opencode-adapter/src/workspace-mcp-v2-worker.ts",
+      "sha256": "7afb3eb7e25660fbb7eb06295e4ee4b3830ca9d21545b76cfe224dfeda7904f9"
+    },
+    {
+      "path": "packages/pi-adapter/PI-SDK-LICENSE",
+      "sha256": "4f6a1985796db5225e3b1e59972bd47e07a27a0748427cb3d3c8fbf39f9311f0"
+    },
+    {
+      "path": "packages/pi-adapter/scripts/build-sdk.mjs",
+      "sha256": "9270818ec1cb0ed27c780bfb3cd51e2fccb9d0df56fd34f2e980c948d9ac2a28"
+    },
+    {
+      "path": "packages/pi-adapter/src/index.ts",
+      "sha256": "3b585a1c4a9cd136f9bb8342fdd43738d7a14508b1ec0c661146b2147e1c5d03"
+    },
+    {
+      "path": "packages/pi-adapter/src/pi-events.ts",
+      "sha256": "356b20c39ab43f52bae3161307b5ea29ebfa454d1c8a901d20d2b13733acf2ce"
+    },
+    {
+      "path": "packages/pi-adapter/src/pi-input.ts",
+      "sha256": "96ce7f4a3cc21f3867bf15449e27716edc58b3f0e416f3661cc8679ebac37891"
+    },
+    {
+      "path": "packages/pi-adapter/src/pi-process.ts",
+      "sha256": "0439f8e5fef3a939cc4bbc39742f9fe777e08558f0c2394d48b6ccc0eee1b80a"
+    },
+    {
+      "path": "packages/pi-adapter/src/sdk-extensions.mjs",
+      "sha256": "8b8d78475c7a2f5b15ccd7e4edf34b29b6bc101a45e4703f3cdaa11293f2e134"
+    },
+    {
+      "path": "packages/pi-adapter/src/sdk-loader.mjs",
+      "sha256": "e59bb7a113ced4c7e23a3e5afe0c409c6b93402186b6dca42f116a4d45065e55"
+    },
+    {
+      "path": "packages/pi-adapter/src/sdk-process-ownership.mjs",
+      "sha256": "87514bdb29e76defc0dc5df6e7a5b60bed8679e1cdc9e3533bac167ae0c4cf2a"
+    },
+    {
+      "path": "packages/pi-adapter/src/sdk-sessions.mjs",
+      "sha256": "b4a94400b0cb786c4aebb4964c963823b2e0d62ba795f272c76608f08ffc49b6"
+    },
+    {
+      "path": "packages/pi-adapter/src/sdk-settings.mjs",
+      "sha256": "37a8b9024bdddeab95d332cb972fdf711547183259220e7d89d1228cf8a764f0"
+    },
+    {
+      "path": "packages/pi-adapter/src/sdk-worker.mjs",
+      "sha256": "0c72ff2befca17b9817306d006f7ddd9cd847db4b310693aacaa4dd583d167f4"
+    },
+    {
+      "path": "packages/pi-adapter/third-party-licenses/nodable-entities-2.1.0.LICENSE",
+      "sha256": "750cb3fb6362804957ef52caaf9b5c824015be44d494637330d7cd8834d31d40"
+    },
+    {
+      "path": "packages/pi-adapter/third-party-licenses/xml-naming-0.1.0.LICENSE",
+      "sha256": "8e75fc0e776c62ccadb8178ece8d3daa9ba7601fb0a49b2dfb0ea9a7a5c0aa07"
+    }
+  ]
+}

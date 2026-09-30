@@ -85,6 +85,19 @@ export interface SessionNotFoundErrorData {
   readonly sessionId: string;
 }
 
+export interface InvalidSessionReferenceErrorData {
+  readonly code: "INVALID_SESSION_REFERENCE";
+  readonly message: string;
+  readonly reason: string;
+}
+
+export interface UnsupportedRouteErrorData {
+  readonly code: "UNSUPPORTED_ROUTE";
+  readonly message: string;
+  readonly harness: HarnessKind;
+  readonly route: string;
+}
+
 export interface SessionBusyErrorData {
   readonly code: "SESSION_BUSY";
   readonly message: string;
@@ -193,6 +206,8 @@ export type MuhaErrorData =
   | SkillConfigurationErrorData
   | McpConfigurationErrorData
   | SessionNotFoundErrorData
+  | InvalidSessionReferenceErrorData
+  | UnsupportedRouteErrorData
   | SessionClosedErrorData
   | SessionBusyErrorData
   | TurnEventStreamAlreadyClaimedErrorData
@@ -237,4 +252,12 @@ export function unsupportedCapabilityErrorData(
     capability,
     operation,
   });
+}
+
+export function invalidSessionReference(message: string, reason: string): MuhaError {
+  return new MuhaError({ code: "INVALID_SESSION_REFERENCE", message, reason });
+}
+
+export function unsupportedRoute(harness: HarnessKind, route: string, message: string): MuhaError {
+  return new MuhaError({ code: "UNSUPPORTED_ROUTE", message, harness, route });
 }

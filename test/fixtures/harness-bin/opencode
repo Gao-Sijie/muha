@@ -1,0 +1,1396 @@
+#!/usr/bin/env node
+import { createServer } from "node:http";
+import { readFile, writeFile } from "node:fs/promises";
+
+const expectedArgs = ["serve", "--hostname", "127.0.0.1", "--port", "0", "--no-mdns"];
+if (JSON.stringify(process.argv.slice(2)) !== JSON.stringify(expectedArgs)) {
+  process.stderr.write("unexpected OpenCode arguments\n");
+  process.exit(64);
+}
+
+const scenario = process.env.MUHA_FAKE_OPENCODE_SCENARIO ?? "normal";
+if (scenario === "early-exit") process.exit(42);
+const username = process.env.OPENCODE_SERVER_USERNAME;
+const password = process.env.OPENCODE_SERVER_PASSWORD;
+if (username !== "opencode" || typeof password !== "string") process.exit(65);
+let passwordBytes;
+try {
+  passwordBytes = Buffer.from(password, "base64url").length;
+} catch {
+  process.exit(65);
+}
+if (passwordBytes !== 32) process.exit(65);
+
+const expectedAuthorization = `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`;
+const evidenceFile = process.env.MUHA_FAKE_OPENCODE_EVIDENCE_FILE;
+const pidFile = process.env.MUHA_FAKE_PID_FILE;
+const sessionsFile = process.env.MUHA_FAKE_OPENCODE_SESSIONS_FILE;
+const pageSize = Number(process.env.MUHA_FAKE_OPENCODE_PAGE_SIZE ?? Number.MAX_SAFE_INTEGER);
+const tlsFailureCount = Number(process.env.MUHA_FAKE_OPENCODE_TLS_FAILURES ?? "1");
+const emptyFinalFailureCount = Number(process.env.MUHA_FAKE_OPENCODE_EMPTY_FINAL_FAILURES ?? "1");
+const evidence = {
+  argv: process.argv.slice(2),
+  username,
+  passwordBytes,
+  inheritedCredentialOverridden:
+    password !== "caller-password" && username !== "caller-username",
+  requests: [],
+  prompts: [],
+  permissionReplies: [],
+  questionResponses: [],
+  aborts: [],
+  unauthorizedRequests: 0,
+  streamConnections: 0,
+  streamDisconnects: 0,
+};
+const sessions = new Map();
+const streams = new Set();
+const pendingPermissions = new Map();
+const pendingQuestions = new Map();
+let nextEventId = 1;
+let nextSessionId = 1;
+
+if (sessionsFile) {
+  try {
+    const seeded = JSON.parse(await readFile(sessionsFile, "utf8"));
+    if (!Array.isArray(seeded)) process.exit(67);
+    for (const value of seeded) {
+      if (!value || typeof value.id !== "string" || typeof value.directory !== "string") process.exit(67);
+      sessions.set(value.id, {
+        id: value.id,
+        projectID: "fake-project",
+        directory: value.directory,
+        title: typeof value.title === "string" ? value.title : "",
+        version: "fake-opencode",
+        ...(typeof value.parentID === "string" ? { parentID: value.parentID } : {}),
+        time: {
+          created: Number.isSafeInteger(value.createdAt) ? value.createdAt : Date.now(),
+          updated: Number.isSafeInteger(value.updatedAt) ? value.updatedAt : Date.now(),
+        },
+        ...(typeof value.model === "string" ? { model: value.model } : {}),
+      });
+    }
+  } catch (error) {
+    if (error?.code !== "ENOENT") process.exit(67);
+  }
+}
+
+await persistEvidence();
+if (pidFile) await writeFile(pidFile, String(process.pid));
+if (scenario === "unready") {
+  setInterval(() => undefined, 1_000);
+} else {
+  const server = createServer(async (request, response) => {
+    try {
+      if (request.headers.authorization !== expectedAuthorization) {
+        evidence.unauthorizedRequests += 1;
+        await persistEvidence();
+        response.writeHead(401).end();
+        return;
+      }
+      const url = new URL(request.url ?? "/", "http://127.0.0.1");
+      const directory = request.headers["x-opencode-directory"];
+      evidence.requests.push({
+        method: request.method,
+        path: url.pathname,
+        query: url.search,
+        directory: typeof directory === "string" ? directory : null,
+        authenticated: true,
+      });
+      await persistEvidence();
+
+      if (request.method === "GET" && url.pathname === "/global/health") {
+        if (scenario === "health-malformed") return json(response, 200, { healthy: "yes" });
+        if (scenario === "health-unhealthy") return json(response, 503, { healthy: false });
+        return json(response, 200, { healthy: true, version: "fake-opencode" });
+      }
+      if (request.method === "GET" && url.pathname === "/event") {
+        if (typeof directory !== "string" || directory.length === 0) return json(response, 400, {});
+        evidence.streamConnections += 1;
+        await persistEvidence();
+        response.writeHead(200, {
+          "content-type": "text/event-stream",
+          "cache-control": "no-cache",
+          connection: "keep-alive",
+        });
+        const stream = { directory, response };
+        streams.add(stream);
+        request.once("close", () => streams.delete(stream));
+        emitTo(stream, { type: "server.connected", properties: {} });
+        if (scenario === "accept-race-disconnect" && evidence.streamConnections === 2) {
+          evidence.streamDisconnects += 1;
+          response.end();
+          streams.delete(stream);
+          await persistEvidence();
+        }
+        return;
+      }
+      if (request.method === "GET" && url.pathname === "/provider") {
+        if (typeof directory !== "string" || directory.length === 0) return json(response, 400, {});
+        if (scenario === "selection-disconnect" && evidence.streamDisconnects === 0) {
+          await disconnectStreams(directory);
+        }
+        return json(response, 200, {
+          all: [
+            {
+              id: "fake-provider",
+              name: "Fake Provider",
+              models: {
+                "fake-model": { id: "fake-model" },
+                "fake-high": { id: "fake-high", variants: { max: { reasoningEffort: "max" } } },
+              },
+            },
+            {
+              id: "Fake.Provider",
+              name: "Lossless Provider",
+              models: { "model/with/slashes": { id: "model/with/slashes" } },
+            },
+            {
+              id: "opencode-go",
+              name: "OpenCode Go Fixture",
+              models: { "fake-tool-model": { id: "fake-tool-model" } },
+            },
+          ],
+          default: { "fake-provider": "fake-model" },
+          connected: ["fake-provider", "Fake.Provider"],
+        });
+      }
+      const permissionReply = url.pathname.match(/^\/permission\/([^/]+)\/reply$/);
+      if (request.method === "POST" && permissionReply) {
+        const requestId = decodeURIComponent(permissionReply[1]);
+        const pending = pendingPermissions.get(requestId);
+        if (!pending || directory !== pending.session.directory) return json(response, 404, {});
+        const body = await readJson(request);
+        if (body.reply !== "once" && body.reply !== "reject") return json(response, 400, {});
+        evidence.permissionReplies.push({ requestId, reply: body.reply });
+        pendingPermissions.delete(requestId);
+        await persistEvidence();
+        emit(pending.session.directory, {
+          type: "permission.replied",
+          properties: { sessionID: pending.session.id, requestID: requestId, reply: body.reply },
+        });
+        if (pending.finish) {
+          setTimeout(pending.finish, 2);
+          return json(response, 200, true);
+        }
+        setTimeout(
+          () => scenario === "reused-tool-call-id"
+            ? emitReusedToolQuestion(pending.session)
+            : scenario === "early-tool-interactions"
+              ? emitEarlyToolQuestion(pending.session)
+            : emitRichQuestion(pending.session),
+          2,
+        );
+        return json(response, 200, true);
+      }
+      const questionReply = url.pathname.match(/^\/question\/([^/]+)\/reply$/);
+      if (request.method === "POST" && questionReply) {
+        const requestId = decodeURIComponent(questionReply[1]);
+        const pending = pendingQuestions.get(requestId);
+        if (!pending || directory !== pending.session.directory) return json(response, 404, {});
+        const body = await readJson(request);
+        if (!Array.isArray(body.answers)) return json(response, 400, {});
+        evidence.questionResponses.push({ requestId, action: "answer", answers: body.answers });
+        pendingQuestions.delete(requestId);
+        await persistEvidence();
+        emit(pending.session.directory, {
+          type: "question.replied",
+          properties: { sessionID: pending.session.id, requestID: requestId, answers: body.answers },
+        });
+        setTimeout(
+          () => scenario === "reused-tool-call-id"
+            ? finishReusedToolCallTurn(pending.session)
+            : scenario === "early-tool-interactions"
+              ? finishEarlyToolInteractionTurn(pending.session)
+            : finishRichTurn(pending.session, false),
+          50,
+        );
+        return json(response, 200, true);
+      }
+      const questionReject = url.pathname.match(/^\/question\/([^/]+)\/reject$/);
+      if (request.method === "POST" && questionReject) {
+        const requestId = decodeURIComponent(questionReject[1]);
+        const pending = pendingQuestions.get(requestId);
+        if (!pending || directory !== pending.session.directory) return json(response, 404, {});
+        pendingQuestions.delete(requestId);
+        evidence.questionResponses.push({ requestId, action: "dismiss" });
+        await persistEvidence();
+        emit(pending.session.directory, {
+          type: "question.rejected",
+          properties: { sessionID: pending.session.id, requestID: requestId },
+        });
+        setTimeout(
+          () => scenario === "reused-tool-call-id"
+            ? finishReusedToolCallTurn(pending.session)
+            : scenario === "early-tool-interactions"
+              ? finishEarlyToolInteractionTurn(pending.session)
+            : finishRichTurn(pending.session, true),
+          50,
+        );
+        return json(response, 200, true);
+      }
+      if (request.method === "GET" && url.pathname === "/session") {
+        if (typeof directory !== "string" || directory.length === 0) return json(response, 400, {});
+        const cursor = Number(url.searchParams.get("cursor") ?? "0");
+        if (!Number.isSafeInteger(cursor) || cursor < 0) return json(response, 400, {});
+        const matches = scenario === "global-list"
+          ? [...sessions.values()]
+          : [...sessions.values()].filter((session) => session.directory === directory);
+        const size = Number.isSafeInteger(pageSize) && pageSize > 0 ? pageSize : matches.length;
+        const page = matches.slice(cursor, cursor + size).map(publicSession);
+        const next = cursor + page.length < matches.length ? String(cursor + page.length) : undefined;
+        return json(response, 200, page, next ? { "x-next-cursor": next } : undefined);
+      }
+      if (request.method === "POST" && url.pathname === "/session") {
+        if (typeof directory !== "string" || directory.length === 0) return json(response, 400, {});
+        await readJson(request);
+        if (scenario === "create-malformed") return json(response, 200, { id: 1 });
+        const now = Date.now();
+        const session = {
+          id: `ses_fake_${nextSessionId++}`,
+          projectID: "fake-project",
+          directory,
+          title: "New session",
+          version: "fake-opencode",
+          time: { created: now, updated: now },
+        };
+        sessions.set(session.id, session);
+        await persistSessions();
+        emit(directory, { type: "session.created", properties: { info: session } });
+        if (
+          (scenario === "idle-disconnect" || scenario === "accept-race-disconnect") &&
+          evidence.streamDisconnects === 0
+        ) {
+          setTimeout(() => void disconnectStreams(directory), 2);
+        }
+        return json(response, 200, publicSession(session));
+      }
+      const getSession = url.pathname.match(/^\/session\/([^/]+)$/);
+      const children = url.pathname.match(/^\/session\/([^/]+)\/children$/);
+      if (request.method === "GET" && children) {
+        const parentID = decodeURIComponent(children[1]);
+        return json(response, 200, [...sessions.values()]
+          .filter((session) => session.parentID === parentID && session.directory === directory).map(publicSession));
+      }
+      if (request.method === "GET" && getSession) {
+        const session = sessions.get(decodeURIComponent(getSession[1]));
+        if (!session || (scenario !== "resume-alias" && directory !== session.directory)) {
+          return json(response, 404, {});
+        }
+        return json(response, 200, publicSession(session));
+      }
+      const messages = url.pathname.match(/^\/session\/([^/]+)\/message$/);
+      if (request.method === "GET" && messages) {
+        const session = sessions.get(decodeURIComponent(messages[1]));
+        if (!session || (scenario !== "resume-alias" && directory !== session.directory)) {
+          return json(response, 404, {});
+        }
+        if (!session.model) return json(response, 200, []);
+        const [providerID, ...modelParts] = session.model.split("/");
+        return json(response, 200, [{
+          info: {
+            id: `msg_historical_${session.id}`,
+            sessionID: session.id,
+            role: "user",
+            time: { created: session.time.updated },
+            agent: "build",
+            model: { providerID, modelID: modelParts.join("/") },
+          },
+          parts: [],
+        }]);
+      }
+      const prompt = url.pathname.match(/^\/session\/([^/]+)\/prompt_async$/);
+      if (request.method === "POST" && prompt) {
+        const session = sessions.get(decodeURIComponent(prompt[1]));
+        if (!session || directory !== session.directory) return json(response, 404, {});
+        const body = await readJson(request);
+        if (!body || !Array.isArray(body.parts) || body.parts.length === 0) return json(response, 400, {});
+        if (!body.parts.every(validPromptPart)) return json(response, 400, {});
+        if (scenario === "prompt-reject") return json(response, 400, { name: "BadRequest" });
+        if (scenario === "image-reject" && body.parts.some(({ type }) => type === "file")) {
+          return json(response, 400, { name: "ImageNotSupported" });
+        }
+        evidence.prompts.push({ sessionID: session.id, model: body.model ?? null, variant: body.variant ?? null, parts: body.parts });
+        const selected = body.model ?? parseModel(session.model) ?? {
+          providerID: "fake-provider",
+          modelID: "fake-model",
+        };
+        session.model = `${selected.providerID}/${selected.modelID}`;
+        session.time.updated = Date.now();
+        await Promise.all([persistEvidence(), persistSessions()]);
+        response.writeHead(204).end();
+        setTimeout(
+          () => {
+            if (scenario === "child-approval") emitChildApproval(session, { ...body, model: selected });
+            else if (scenario === "session-error") emitSessionError(session, selected, false);
+            else if (scenario === "session-error-retryable") emitSessionError(session, selected, true);
+            else if (scenario === "transient-tls" && evidence.prompts.length <= tlsFailureCount) {
+              emitTlsSessionError(session, selected);
+            }
+            else if (scenario === "reused-tool-call-id") {
+              emitReusedToolCallTurn(session, { ...body, model: selected });
+            } else if (scenario === "early-tool-interactions") {
+              emitEarlyToolInteractionTurn(session, { ...body, model: selected });
+            } else if (scenario === "duplicate-tool-snapshots") {
+              emitDuplicateToolSnapshotsTurn(session, { ...body, model: selected });
+            } else if (
+              scenario === "completed-tool-update" ||
+              scenario === "tool-part-identity-drift" ||
+              scenario === "ambiguous-tool-reference"
+            ) {
+              emitIllegalToolIdentityTurn(session, { ...body, model: selected }, scenario);
+            } else if (
+              scenario === "rich" ||
+              scenario === "abort-event-race" ||
+              scenario === "abort-event-rejected"
+            ) {
+              emitRichTurn(session, { ...body, model: selected });
+            } else if (scenario === "reasoning-only") {
+              emitReasoningOnlyTurn(session, { ...body, model: selected });
+            } else if (
+              scenario === "empty-final-then-text" &&
+              evidence.prompts.length <= emptyFinalFailureCount
+            ) {
+              emitReasoningOnlyTurn(session, { ...body, model: selected });
+            } else if (scenario === "whitespace-final") {
+              emitTextTurn(session, { ...body, model: selected, finalText: " \n\t" });
+            } else if (scenario === "empty-intermediate" || scenario === "cumulative-usage") {
+              emitTextTurn(session, { ...body, model: selected, emptyIntermediate: true, duplicateIntermediate: scenario === "cumulative-usage" });
+            } else if (scenario === "nonempty-intermediate-empty-final") {
+              emitTextTurn(session, { ...body, model: selected, intermediateText: "Intermediate.", finalText: "" });
+            } else if (scenario === "active-disconnect") {
+              emitRichTurn(session, { ...body, model: selected });
+              emitRichQuestion(session);
+              setTimeout(() => void disconnectStreams(session.directory), 2);
+            } else emitTextTurn(session, { ...body, model: selected });
+          },
+          5,
+        );
+        return;
+      }
+      const abort = url.pathname.match(/^\/session\/([^/]+)\/abort$/);
+      if (request.method === "POST" && abort) {
+        const session = sessions.get(decodeURIComponent(abort[1]));
+        if (!session || directory !== session.directory) return json(response, 404, {});
+        evidence.aborts.push({ sessionID: session.id });
+        await persistEvidence();
+        if (scenario === "abort-event-race" || scenario === "abort-event-rejected") {
+          emit(session.directory, {
+            type: "session.error",
+            properties: {
+              sessionID: session.id,
+              error: { name: "MessageAbortedError", data: { message: "Aborted" } },
+            },
+          });
+          await new Promise((resolve) => setTimeout(resolve, 25));
+          if (scenario === "abort-event-rejected") return json(response, 409, false);
+        }
+        return json(response, 200, true);
+      }
+      json(response, 404, {});
+    } catch {
+      json(response, 500, {});
+    }
+  });
+
+  server.listen(0, "127.0.0.1", () => {
+    const address = server.address();
+    if (!address || typeof address === "string") process.exit(66);
+    const line = scenario === "bad-ready-line"
+      ? `server available on http://127.0.0.1:${address.port}`
+      : `opencode server listening on http://127.0.0.1:${address.port}`;
+    process.stdout.write(`${line}\n`);
+  });
+
+  process.once("SIGTERM", shutdown);
+  process.once("SIGINT", shutdown);
+  async function shutdown() {
+    for (const stream of streams) stream.response.destroy();
+    streams.clear();
+    server.closeAllConnections();
+    server.close(() => process.exit(0));
+  }
+}
+
+function emitSessionError(session, model, retryable) {
+  const userMessageId = `msg_user_${session.id}`;
+  const assistantMessageId = `msg_assistant_${session.id}`;
+  const now = Date.now();
+  emit(session.directory, {
+    type: "message.updated",
+    properties: {
+      info: {
+        id: userMessageId,
+        sessionID: session.id,
+        role: "user",
+        time: { created: now },
+        agent: "build",
+        model,
+      },
+    },
+  });
+  emit(session.directory, {
+    type: "message.updated",
+    properties: {
+      info: {
+        id: assistantMessageId,
+        sessionID: session.id,
+        role: "assistant",
+        time: { created: now + 1 },
+        parentID: userMessageId,
+        modelID: model.modelID,
+        providerID: model.providerID,
+      },
+    },
+  });
+  emit(session.directory, {
+    type: "session.error",
+    properties: {
+      sessionID: session.id,
+      error: {
+        name: "APIError",
+        data: {
+          message: "Invalid API Key",
+          statusCode: 401,
+          isRetryable: retryable,
+          responseBody: "sensitive body must not escape",
+        },
+      },
+    },
+  });
+}
+
+function emitTlsSessionError(session, model) {
+  const userMessageId = `msg_user_${session.id}`;
+  const assistantMessageId = `msg_assistant_${session.id}`;
+  const now = Date.now();
+  emit(session.directory, {
+    type: "message.updated",
+    properties: {
+      info: {
+        id: userMessageId,
+        sessionID: session.id,
+        role: "user",
+        time: { created: now },
+        agent: "build",
+        model,
+      },
+    },
+  });
+  emit(session.directory, {
+    type: "message.updated",
+    properties: {
+      info: {
+        id: assistantMessageId,
+        sessionID: session.id,
+        role: "assistant",
+        time: { created: now + 1 },
+        parentID: userMessageId,
+        modelID: model.modelID,
+        providerID: model.providerID,
+      },
+    },
+  });
+  emit(session.directory, {
+    type: "session.error",
+    properties: {
+      sessionID: session.id,
+      error: {
+        name: "UnknownError",
+        data: { message: "unknown certificate verification error" },
+      },
+    },
+  });
+}
+
+function emitChildApproval(session, body) {
+  emit(session.directory, { type: "message.updated", properties: { info: {
+    id: `msg_user_${session.id}`, sessionID: session.id, role: "user", model: body.model,
+  } } });
+  let child = session;
+  if (!body.parts.some((part) => part.text === "peer")) {
+    for (const suffix of ["_child", "_grandchild"]) {
+      const id = session.id + suffix;
+      let next = sessions.get(id);
+      if (!next) {
+        next = { ...publicSession(session), id, parentID: child.id };
+        sessions.set(id, next);
+        emit(session.directory, { type: "session.created", properties: { info: next } });
+      }
+      child = next;
+    }
+  }
+  const requestId = `perm_${child.id}_${nextEventId}`;
+  pendingPermissions.set(requestId, { session: child, finish: () => emitTextTurn(session, body) });
+  emit(session.directory, { type: "permission.asked", properties: {
+    id: requestId, sessionID: child.id, permission: "bash", patterns: ["echo approved"], metadata: {},
+  } });
+}
+
+function emitTextTurn(session, body) {
+  const model = body.model ?? { providerID: "fake-provider", modelID: "fake-model" };
+  const userMessageId = `msg_user_${session.id}`;
+  const assistantMessageId = `msg_assistant_${session.id}`;
+  const now = Date.now();
+  emit(session.directory, {
+    type: "message.updated",
+    properties: {
+      info: {
+        id: userMessageId,
+        sessionID: session.id,
+        role: "user",
+        time: { created: now },
+        agent: "build",
+        model,
+      },
+    },
+  });
+  emitUserTextPart(session, userMessageId);
+  emit(session.directory, {
+    type: "session.status",
+    properties: { sessionID: session.id, status: { type: "busy" } },
+  });
+  if (body.emptyIntermediate === true || body.intermediateText !== undefined) {
+    const intermediate = {
+      id: `msg_assistant_intermediate_${session.id}`,
+      sessionID: session.id,
+      role: "assistant",
+      time: { created: now + 1 },
+      parentID: userMessageId,
+      modelID: model.modelID,
+      providerID: model.providerID,
+      mode: "build",
+      path: { cwd: session.directory, root: session.directory },
+      cost: 0,
+      tokens: { input: 4, output: 0, reasoning: 2, cache: { read: 0, write: 0 } },
+    };
+    emit(session.directory, {
+      type: "message.updated",
+      properties: { info: intermediate },
+    });
+    if (body.intermediateText !== undefined) {
+      emit(session.directory, {
+        type: "message.part.updated",
+        properties: {
+          part: {
+            id: `part_intermediate_text_${session.id}`,
+            sessionID: session.id,
+            messageID: intermediate.id,
+            type: "text",
+            text: body.intermediateText,
+          },
+          delta: body.intermediateText,
+        },
+      });
+    }
+    const completedIntermediate = {
+      type: "message.updated",
+      properties: {
+        info: { ...intermediate, time: { ...intermediate.time, completed: now + 2 }, finish: "tool-call" },
+      },
+    };
+    emit(session.directory, completedIntermediate);
+    if (body.duplicateIntermediate) emit(session.directory, completedIntermediate);
+  }
+  const assistant = {
+    id: assistantMessageId,
+    sessionID: session.id,
+    role: "assistant",
+    time: { created: now + 1 },
+    parentID: userMessageId,
+    modelID: model.modelID,
+    providerID: model.providerID,
+    mode: "build",
+    path: { cwd: session.directory, root: session.directory },
+    cost: 0,
+    tokens: { input: 4, output: 3, reasoning: 0, cache: { read: 1, write: 0 } },
+  };
+  emit(session.directory, {
+    type: "message.updated",
+    properties: { info: assistant },
+  });
+  const text = body.finalText ?? "Hello from OpenCode.";
+  emit(session.directory, {
+    type: "message.part.updated",
+    properties: {
+      part: {
+        id: `part_text_${session.id}`,
+        sessionID: session.id,
+        messageID: assistantMessageId,
+        type: "text",
+        text,
+      },
+      delta: text,
+    },
+  });
+  emit(session.directory, {
+    type: "message.updated",
+    properties: {
+      info: { ...assistant, time: { ...assistant.time, completed: now + 2 }, finish: "stop" },
+    },
+  });
+  emit(session.directory, {
+    type: "session.status",
+    properties: { sessionID: session.id, status: { type: "idle" } },
+  });
+}
+
+function emitReasoningOnlyTurn(session, body) {
+  const model = body.model ?? { providerID: "fake-provider", modelID: "fake-model" };
+  const userMessageId = `msg_user_${session.id}`;
+  const assistantMessageId = `msg_assistant_${session.id}`;
+  const now = Date.now();
+  emit(session.directory, {
+    type: "message.updated",
+    properties: {
+      info: {
+        id: userMessageId,
+        sessionID: session.id,
+        role: "user",
+        time: { created: now },
+        agent: "build",
+        model,
+      },
+    },
+  });
+  emitUserTextPart(session, userMessageId);
+  emit(session.directory, {
+    type: "session.status",
+    properties: { sessionID: session.id, status: { type: "busy" } },
+  });
+  const assistant = {
+    id: assistantMessageId,
+    sessionID: session.id,
+    role: "assistant",
+    time: { created: now + 1 },
+    parentID: userMessageId,
+    modelID: model.modelID,
+    providerID: model.providerID,
+    mode: "build",
+    path: { cwd: session.directory, root: session.directory },
+    cost: 0,
+    tokens: { input: 0, output: 0, reasoning: 12, cache: { read: 0, write: 0 } },
+  };
+  emit(session.directory, {
+    type: "message.updated",
+    properties: { info: assistant },
+  });
+  emit(session.directory, {
+    type: "message.part.updated",
+    properties: {
+      part: {
+        id: `part_reasoning_${session.id}`,
+        sessionID: session.id,
+        messageID: assistantMessageId,
+        type: "reasoning",
+        text: "",
+        time: { start: now + 1 },
+      },
+      time: now + 1,
+    },
+  });
+  emit(session.directory, {
+    type: "message.part.delta",
+    properties: {
+      sessionID: session.id,
+      messageID: assistantMessageId,
+      partID: `part_reasoning_${session.id}`,
+      field: "text",
+      delta: "Thinking without a final.",
+    },
+  });
+  emit(session.directory, {
+    type: "message.updated",
+    properties: {
+      info: { ...assistant, time: { ...assistant.time, completed: now + 2 }, finish: "unknown" },
+    },
+  });
+  emit(session.directory, {
+    type: "session.status",
+    properties: { sessionID: session.id, status: { type: "idle" } },
+  });
+}
+
+function emitUserTextPart(session, userMessageId) {
+  emit(session.directory, {
+    type: "message.part.updated",
+    properties: {
+      part: {
+        id: `part_user_${session.id}`,
+        sessionID: session.id,
+        messageID: userMessageId,
+        type: "text",
+        text: "User prompt fixture.",
+      },
+    },
+  });
+}
+
+function emitRichTurn(session, body) {
+  const model = body.model;
+  const userMessageId = `msg_user_${session.id}`;
+  const assistantMessageId = `msg_assistant_${session.id}`;
+  const now = Date.now();
+  session.rich = { userMessageId, assistantMessageId, model, now };
+  emit(session.directory, {
+    type: "message.updated",
+    properties: {
+      sessionID: session.id,
+      info: {
+        id: userMessageId,
+        sessionID: session.id,
+        role: "user",
+        time: { created: now },
+        agent: "build",
+        model,
+      },
+    },
+  });
+  emitUserTextPart(session, userMessageId);
+  emit(session.directory, {
+    type: "session.status",
+    properties: { sessionID: session.id, status: { type: "busy" } },
+  });
+  emit(session.directory, {
+    type: "message.updated",
+    properties: { sessionID: session.id, info: richAssistant(session, false) },
+  });
+  emit(session.directory, {
+    type: "message.part.updated",
+    properties: {
+      sessionID: session.id,
+      part: {
+        id: `part_reasoning_${session.id}`,
+        sessionID: session.id,
+        messageID: assistantMessageId,
+        type: "reasoning",
+        text: "",
+        time: { start: now },
+      },
+      time: now,
+    },
+  });
+  emit(session.directory, {
+    type: "message.part.delta",
+    properties: {
+      sessionID: session.id,
+      messageID: assistantMessageId,
+      partID: `part_reasoning_${session.id}`,
+      field: "text",
+      delta: "Thinking.",
+    },
+  });
+  emitToolRunning(session, false);
+  emitToolRunning(session, true);
+  const requestId = `per_${session.id}`;
+  pendingPermissions.set(requestId, { session });
+  emit(session.directory, {
+    type: "permission.asked",
+    properties: {
+      id: requestId,
+      sessionID: session.id,
+      permission: "bash",
+      patterns: ["npm test"],
+      metadata: { command: "npm test" },
+      always: ["npm test"],
+      tool: { messageID: assistantMessageId, callID: `call_${session.id}` },
+    },
+  });
+}
+
+function emitReusedToolCallTurn(session, body) {
+  const model = body.model;
+  const userMessageId = `msg_user_${session.id}`;
+  const firstAssistantMessageId = `msg_assistant_first_${session.id}`;
+  const secondAssistantMessageId = `msg_assistant_second_${session.id}`;
+  const now = Date.now();
+  session.reusedTool = {
+    userMessageId,
+    firstAssistantMessageId,
+    secondAssistantMessageId,
+    model,
+    now,
+  };
+  emit(session.directory, {
+    type: "message.updated",
+    properties: {
+      info: {
+        id: userMessageId,
+        sessionID: session.id,
+        role: "user",
+        time: { created: now },
+        agent: "build",
+        model,
+      },
+    },
+  });
+  emitUserTextPart(session, userMessageId);
+  emit(session.directory, {
+    type: "session.status",
+    properties: { sessionID: session.id, status: { type: "busy" } },
+  });
+  emit(session.directory, {
+    type: "message.updated",
+    properties: { info: reusedToolAssistant(session, "first", false) },
+  });
+  emitReusedToolPart(session, "first", "running");
+  emitReusedToolPart(session, "first", "completed");
+  emitReusedToolText(session, "first", "First tool finished.");
+  emit(session.directory, {
+    type: "message.updated",
+    properties: { info: reusedToolAssistant(session, "first", true) },
+  });
+  emit(session.directory, {
+    type: "message.updated",
+    properties: { info: reusedToolAssistant(session, "second", false) },
+  });
+  emitReusedToolPart(session, "second", "running");
+  const requestId = `per_reused_${session.id}`;
+  pendingPermissions.set(requestId, { session });
+  emit(session.directory, {
+    type: "permission.asked",
+    properties: {
+      id: requestId,
+      sessionID: session.id,
+      permission: "bash",
+      patterns: ["node --test"],
+      metadata: { command: "node --test" },
+      tool: { messageID: secondAssistantMessageId, callID: "bash_0" },
+    },
+  });
+}
+
+function emitIllegalToolIdentityTurn(session, body, kind) {
+  const model = body.model;
+  const userMessageId = `msg_user_${session.id}`;
+  const assistantMessageId = `msg_assistant_${session.id}`;
+  const now = Date.now();
+  emit(session.directory, {
+    type: "message.updated",
+    properties: {
+      info: {
+        id: userMessageId,
+        sessionID: session.id,
+        role: "user",
+        time: { created: now },
+        agent: "build",
+        model,
+      },
+    },
+  });
+  emitUserTextPart(session, userMessageId);
+  emit(session.directory, {
+    type: "message.updated",
+    properties: {
+      info: {
+        id: assistantMessageId,
+        sessionID: session.id,
+        role: "assistant",
+        time: { created: now + 1 },
+        parentID: userMessageId,
+        modelID: model.modelID,
+        providerID: model.providerID,
+      },
+    },
+  });
+  const part = {
+    id: `part_tool_${session.id}`,
+    sessionID: session.id,
+    messageID: assistantMessageId,
+    type: "tool",
+    callID: "bash_0",
+    tool: "bash",
+    state: { status: "running", input: { command: "node --test" } },
+  };
+  emit(session.directory, { type: "message.part.updated", properties: { part } });
+  if (kind === "completed-tool-update") {
+    emit(session.directory, {
+      type: "message.part.updated",
+      properties: {
+        part: { ...part, state: { ...part.state, status: "completed", output: "done" } },
+      },
+    });
+    emit(session.directory, { type: "message.part.updated", properties: { part } });
+  } else if (kind === "tool-part-identity-drift") {
+    emit(session.directory, {
+      type: "message.part.updated",
+      properties: { part: { ...part, callID: "bash_1" } },
+    });
+  } else {
+    emit(session.directory, {
+      type: "message.part.updated",
+      properties: { part: { ...part, id: `part_tool_other_${session.id}` } },
+    });
+  }
+}
+
+function emitEarlyToolInteractionTurn(session, body) {
+  const model = body.model;
+  const userMessageId = `msg_user_${session.id}`;
+  const assistantMessageId = `msg_assistant_${session.id}`;
+  const now = Date.now();
+  session.earlyTool = { userMessageId, assistantMessageId, model, now };
+  emit(session.directory, {
+    type: "message.updated",
+    properties: {
+      info: {
+        id: userMessageId,
+        sessionID: session.id,
+        role: "user",
+        time: { created: now },
+        agent: "build",
+        model,
+      },
+    },
+  });
+  emitUserTextPart(session, userMessageId);
+  emit(session.directory, {
+    type: "message.updated",
+    properties: { info: earlyToolAssistant(session, false) },
+  });
+  const requestId = `per_early_${session.id}`;
+  pendingPermissions.set(requestId, { session });
+  emit(session.directory, {
+    type: "permission.asked",
+    properties: {
+      id: requestId,
+      sessionID: session.id,
+      permission: "bash",
+      patterns: ["node --test"],
+      metadata: {},
+      tool: { messageID: assistantMessageId, callID: "bash_early" },
+    },
+  });
+}
+
+function emitEarlyToolQuestion(session) {
+  emitEarlyToolPart(session, "pending");
+  const requestId = `que_early_${session.id}`;
+  pendingQuestions.set(requestId, { session });
+  emit(session.directory, {
+    type: "question.asked",
+    properties: {
+      id: requestId,
+      sessionID: session.id,
+      questions: [{
+        header: "Continue",
+        question: "Continue?",
+        options: [{ label: "Yes", description: "Continue the fixture" }],
+        multiple: false,
+        custom: false,
+      }],
+      tool: { messageID: session.earlyTool.assistantMessageId, callID: "bash_early" },
+    },
+  });
+}
+
+function finishEarlyToolInteractionTurn(session) {
+  emitEarlyToolPart(session, "running");
+  emitEarlyToolPart(session, "completed");
+  const text = "Early interactions resolved.";
+  emit(session.directory, {
+    type: "message.part.updated",
+    properties: {
+      part: {
+        id: `part_text_early_${session.id}`,
+        sessionID: session.id,
+        messageID: session.earlyTool.assistantMessageId,
+        type: "text",
+        text,
+      },
+    },
+  });
+  emit(session.directory, {
+    type: "message.updated",
+    properties: { info: earlyToolAssistant(session, true) },
+  });
+  emit(session.directory, {
+    type: "session.status",
+    properties: { sessionID: session.id, status: { type: "idle" } },
+  });
+}
+
+function emitEarlyToolPart(session, status) {
+  emit(session.directory, {
+    type: "message.part.updated",
+    properties: {
+      part: {
+        id: `part_tool_early_${session.id}`,
+        sessionID: session.id,
+        messageID: session.earlyTool.assistantMessageId,
+        type: "tool",
+        callID: "bash_early",
+        tool: "bash",
+        state: {
+          status,
+          input: { command: "node --test" },
+          ...(status === "completed" ? { output: "done" } : {}),
+        },
+      },
+    },
+  });
+}
+
+function earlyToolAssistant(session, completed) {
+  return {
+    id: session.earlyTool.assistantMessageId,
+    sessionID: session.id,
+    role: "assistant",
+    time: {
+      created: session.earlyTool.now + 1,
+      ...(completed ? { completed: Date.now() } : {}),
+    },
+    parentID: session.earlyTool.userMessageId,
+    modelID: session.earlyTool.model.modelID,
+    providerID: session.earlyTool.model.providerID,
+    tokens: { input: 2, output: 2, reasoning: 0, cache: { read: 0, write: 0 } },
+    ...(completed ? { finish: "stop" } : {}),
+  };
+}
+
+function emitDuplicateToolSnapshotsTurn(session, body) {
+  emitEarlyToolInteractionTurn(session, body);
+  pendingPermissions.clear();
+  emitEarlyToolPart(session, "pending");
+  emitEarlyToolPart(session, "pending");
+  emitEarlyToolPart(session, "running");
+  emitEarlyToolPart(session, "running");
+  emitEarlyToolPart(session, "completed");
+  emitEarlyToolPart(session, "completed");
+  finishEarlyToolInteractionTurnWithoutTool(session);
+}
+
+function finishEarlyToolInteractionTurnWithoutTool(session) {
+  emit(session.directory, {
+    type: "message.part.updated",
+    properties: {
+      part: {
+        id: `part_text_early_${session.id}`,
+        sessionID: session.id,
+        messageID: session.earlyTool.assistantMessageId,
+        type: "text",
+        text: "Duplicate snapshots reconciled.",
+      },
+    },
+  });
+  emit(session.directory, {
+    type: "message.updated",
+    properties: { info: earlyToolAssistant(session, true) },
+  });
+  emit(session.directory, {
+    type: "session.status",
+    properties: { sessionID: session.id, status: { type: "idle" } },
+  });
+}
+
+function emitReusedToolQuestion(session) {
+  const requestId = `que_reused_${session.id}`;
+  pendingQuestions.set(requestId, { session });
+  emit(session.directory, {
+    type: "question.asked",
+    properties: {
+      id: requestId,
+      sessionID: session.id,
+      questions: [{
+        header: "Continue",
+        question: "Continue the protocol fixture?",
+        options: [{ label: "Yes", description: "Complete the second tool" }],
+        multiple: false,
+        custom: false,
+      }],
+      tool: {
+        messageID: session.reusedTool.secondAssistantMessageId,
+        callID: "bash_0",
+      },
+    },
+  });
+}
+
+function finishReusedToolCallTurn(session) {
+  emitReusedToolPart(session, "second", "completed");
+  emitReusedToolText(session, "second", "Second tool finished.");
+  emit(session.directory, {
+    type: "message.updated",
+    properties: { info: reusedToolAssistant(session, "second", true) },
+  });
+  emit(session.directory, {
+    type: "session.status",
+    properties: { sessionID: session.id, status: { type: "idle" } },
+  });
+}
+
+function emitReusedToolPart(session, which, status) {
+  const messageID = which === "first"
+    ? session.reusedTool.firstAssistantMessageId
+    : session.reusedTool.secondAssistantMessageId;
+  emit(session.directory, {
+    type: "message.part.updated",
+    properties: {
+      part: {
+        id: `part_tool_${which}_${session.id}`,
+        sessionID: session.id,
+        messageID,
+        type: "tool",
+        callID: "bash_0",
+        tool: "bash",
+        state: {
+          status,
+          input: { command: which === "first" ? "node --version" : "node --test" },
+          ...(status === "completed" ? { output: `${which} complete` } : {}),
+        },
+      },
+    },
+  });
+}
+
+function emitReusedToolText(session, which, text) {
+  const messageID = which === "first"
+    ? session.reusedTool.firstAssistantMessageId
+    : session.reusedTool.secondAssistantMessageId;
+  emit(session.directory, {
+    type: "message.part.updated",
+    properties: {
+      part: {
+        id: `part_text_${which}_${session.id}`,
+        sessionID: session.id,
+        messageID,
+        type: "text",
+        text,
+      },
+    },
+  });
+}
+
+function reusedToolAssistant(session, which, completed) {
+  const messageID = which === "first"
+    ? session.reusedTool.firstAssistantMessageId
+    : session.reusedTool.secondAssistantMessageId;
+  return {
+    id: messageID,
+    sessionID: session.id,
+    role: "assistant",
+    time: {
+      created: session.reusedTool.now + (which === "first" ? 1 : 3),
+      ...(completed ? { completed: Date.now() } : {}),
+    },
+    parentID: session.reusedTool.userMessageId,
+    modelID: session.reusedTool.model.modelID,
+    providerID: session.reusedTool.model.providerID,
+    mode: "build",
+    agent: "build",
+    path: { cwd: session.directory, root: session.directory },
+    cost: 0,
+    tokens: { input: 4, output: 3, reasoning: 0, cache: { read: 0, write: 0 } },
+    ...(completed ? { finish: "stop" } : {}),
+  };
+}
+
+function emitToolRunning(session, updated) {
+  emit(session.directory, {
+    type: "message.part.updated",
+    properties: {
+      sessionID: session.id,
+      part: {
+        id: `part_tool_${session.id}`,
+        sessionID: session.id,
+        messageID: session.rich.assistantMessageId,
+        type: "tool",
+        callID: `call_${session.id}`,
+        tool: "bash",
+        state: {
+          status: "running",
+          input: { command: "npm test" },
+          ...(updated ? { title: "Running tests", metadata: { phase: 2 } } : {}),
+          time: { start: session.rich.now },
+        },
+      },
+      time: Date.now(),
+    },
+  });
+}
+
+function emitRichQuestion(session) {
+  const requestId = `que_${session.id}`;
+  pendingQuestions.set(requestId, { session });
+  emit(session.directory, {
+    type: "question.asked",
+    properties: {
+      id: requestId,
+      sessionID: session.id,
+      questions: [
+        {
+          header: "Deploy",
+          question: "Choose a target",
+          options: [
+            { label: "Staging", description: "Use staging" },
+            { label: "Production", description: "Use production" },
+          ],
+          multiple: false,
+          custom: true,
+        },
+        {
+          header: "Checks",
+          question: "Choose checks",
+          options: [
+            { label: "Unit", description: "Run unit tests" },
+            { label: "E2E", description: "Run end-to-end tests" },
+          ],
+          multiple: true,
+          custom: true,
+        },
+      ],
+      tool: { messageID: session.rich.assistantMessageId, callID: `call_${session.id}` },
+    },
+  });
+}
+
+function finishRichTurn(session, dismissed) {
+  emit(session.directory, {
+    type: "message.part.updated",
+    properties: {
+      sessionID: session.id,
+      part: {
+        id: `part_tool_${session.id}`,
+        sessionID: session.id,
+        messageID: session.rich.assistantMessageId,
+        type: "tool",
+        callID: `call_${session.id}`,
+        tool: "bash",
+        state: {
+          status: dismissed ? "error" : "completed",
+          input: { command: "npm test" },
+          ...(dismissed
+            ? { error: "Question dismissed", time: { start: session.rich.now, end: Date.now() } }
+            : {
+                output: "tests passed",
+                title: "Tests",
+                metadata: { exitCode: 0 },
+                time: { start: session.rich.now, end: Date.now() },
+              }),
+        },
+      },
+      time: Date.now(),
+    },
+  });
+  const partID = `part_text_${session.id}`;
+  emit(session.directory, {
+    type: "message.part.updated",
+    properties: {
+      sessionID: session.id,
+      part: {
+        id: partID,
+        sessionID: session.id,
+        messageID: session.rich.assistantMessageId,
+        type: "text",
+        text: "",
+      },
+      time: Date.now(),
+    },
+  });
+  const text = dismissed ? "Question dismissed." : "All checks passed.";
+  emit(session.directory, {
+    type: "message.part.delta",
+    properties: {
+      sessionID: session.id,
+      messageID: session.rich.assistantMessageId,
+      partID,
+      field: "text",
+      delta: text,
+    },
+  });
+  emit(session.directory, {
+    type: "message.updated",
+    properties: { sessionID: session.id, info: richAssistant(session, true) },
+  });
+  emit(session.directory, {
+    type: "session.status",
+    properties: { sessionID: session.id, status: { type: "idle" } },
+  });
+}
+
+function richAssistant(session, completed) {
+  return {
+    id: session.rich.assistantMessageId,
+    sessionID: session.id,
+    role: "assistant",
+    time: { created: session.rich.now + 1, ...(completed ? { completed: Date.now() } : {}) },
+    parentID: session.rich.userMessageId,
+    modelID: session.rich.model.modelID,
+    providerID: session.rich.model.providerID,
+    mode: "build",
+    agent: "build",
+    path: { cwd: session.directory, root: session.directory },
+    cost: 0,
+    tokens: { input: 10, output: 8, reasoning: 2, cache: { read: 3, write: 0 } },
+    ...(completed ? { finish: "stop" } : {}),
+  };
+}
+
+function validPromptPart(part) {
+  if (!part || typeof part !== "object") return false;
+  if (part.type === "text") return typeof part.text === "string" && part.text.length > 0;
+  return part.type === "file" &&
+    ["image/png", "image/jpeg", "image/webp", "image/gif"].includes(part.mime) &&
+    typeof part.url === "string" &&
+    (part.url.startsWith("file:") || (
+      part.url.startsWith(`data:${part.mime};base64,`) &&
+      part.url.length > `data:${part.mime};base64,`.length
+    ));
+}
+
+function parseModel(model) {
+  if (typeof model !== "string") return undefined;
+  const slash = model.indexOf("/");
+  if (slash < 1 || slash === model.length - 1) return undefined;
+  return { providerID: model.slice(0, slash), modelID: model.slice(slash + 1) };
+}
+
+function publicSession(session) {
+  const { model: _model, ...value } = session;
+  return value;
+}
+
+function emit(directory, event) {
+  for (const stream of streams) {
+    if (stream.directory === directory) emitTo(stream, event);
+  }
+}
+
+function emitTo(stream, event) {
+  stream.response.write(`event: message\ndata: ${JSON.stringify({ id: `evt_${nextEventId++}`, ...event })}\n\n`);
+}
+
+async function disconnectStreams(directory) {
+  const matches = [...streams].filter((stream) => stream.directory === directory);
+  if (matches.length === 0) return;
+  evidence.streamDisconnects += matches.length;
+  for (const stream of matches) stream.response.destroy();
+  await persistEvidence();
+}
+
+async function readJson(request) {
+  let source = "";
+  for await (const chunk of request) source += chunk;
+  return source.length === 0 ? {} : JSON.parse(source);
+}
+
+function json(response, status, value, headers = {}) {
+  response.writeHead(status, { "content-type": "application/json", ...headers });
+  response.end(JSON.stringify(value));
+}
+
+async function persistEvidence() {
+  if (evidenceFile) await writeFile(evidenceFile, JSON.stringify(evidence));
+}
+
+async function persistSessions() {
+  if (!sessionsFile) return;
+  await writeFile(sessionsFile, JSON.stringify([...sessions.values()].map((session) => ({
+    id: session.id,
+    directory: session.directory,
+    title: session.title,
+    createdAt: session.time.created,
+    updatedAt: session.time.updated,
+    ...(session.model ? { model: session.model } : {}),
+  }))));
+}

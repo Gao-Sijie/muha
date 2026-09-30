@@ -3,9 +3,9 @@ import type {
   HarnessRegistration,
   OfficialAdapterOptions,
 } from "@muha-sdk/core";
+import { fileURLToPath } from "node:url";
 import {
   composeWorkspaceConfigurator,
-  createAddMcpPlanner,
   createOfficialHarnessRegistration,
   createSkillsCliPlanner,
 } from "@muha-sdk/core/internal";
@@ -37,7 +37,11 @@ export type { OfficialAdapterOptions } from "@muha-sdk/core";
 
 const workspaceConfigurator = composeWorkspaceConfigurator({
   planSkill: createSkillsCliPlanner("opencode"),
-  planMcpServer: createAddMcpPlanner("opencode"),
+  planMcpServer: (input) => ({
+    entrypoint: fileURLToPath(new URL("./workspace-mcp-v2-worker.js", import.meta.url)),
+    args: [],
+    stdin: JSON.stringify(input),
+  }),
 });
 
 export function openCodeAdapter(

@@ -1,0 +1,3 @@
+# Authenticate the Internal OpenCode Server
+
+The OpenCode Adapter generates a fresh 256-bit random password for every Runtime, starts its managed server with `OPENCODE_SERVER_USERNAME=opencode` and that value as `OPENCODE_SERVER_PASSWORD`, and sends HTTP Basic authentication on every HTTP and SSE request. These two variables are reserved internal control variables that override inherited values and `OfficialAdapterOptions.env`, narrowly superseding ADR-0037 and ADR-0065 for OpenCode only. The credential remains only in Adapter memory and is never persisted, included in Native Event Records, logged, exposed publicly, or accepted as a public option; this protects the loopback control server and does not manage the caller's Harness or model-provider authentication.

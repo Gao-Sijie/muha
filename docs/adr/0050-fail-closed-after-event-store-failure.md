@@ -1,0 +1,3 @@
+# Fail closed after Event Store failure
+
+If the Diagnostic Event Store loses reliable write or commit capability after Runtime initialization, Core fails every active Turn with `EVENT_STORE_ERROR`, accepts no new commands, and automatically enters the same irreversible Runtime close path that a caller-requested close uses. The caller still calls `runtime.close()` to await that already-started cleanup, Session Handles close without deleting native conversations, and future commands receive `RUNTIME_CLOSED`; Muha never bypasses write-ahead delivery or deletes historical Runtime directories to recover space. This is a lower-priority failure-path implementation but a mandatory invariant and conformance test before release.

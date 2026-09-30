@@ -1,0 +1,1052 @@
+#!/usr/bin/env node
+import { createHash } from "node:crypto";
+import { createServer } from "node:http";
+import { readFile, writeFile } from "node:fs/promises";
+
+const expectedArgs = ["web", "--no-open", "--host", "127.0.0.1", "--port", "0"];
+if (JSON.stringify(process.argv.slice(2)) !== JSON.stringify(expectedArgs)) {
+  process.stderr.write("unexpected Kimi arguments\n");
+  process.exit(64);
+}
+
+const token = "fake-kimi-server-token";
+const bearerProtocol = `kimi-code.bearer.${token}`;
+const evidenceFile = process.env.MUHA_FAKE_KIMI_EVIDENCE_FILE;
+const pidFile = process.env.MUHA_FAKE_PID_FILE;
+const sessionsFile = process.env.MUHA_FAKE_KIMI_SESSIONS_FILE;
+const pageSize = Number(process.env.MUHA_FAKE_KIMI_PAGE_SIZE ?? 100);
+const scenario = process.env.MUHA_FAKE_KIMI_SCENARIO ?? "normal";
+const evidence = {
+  argv: process.argv.slice(2),
+  requests: [],
+  prompts: [],
+  profiles: [],
+  approvalDecisions: [],
+  questionResponses: [],
+  unauthorizedRequests: 0,
+  authenticatedWebSockets: 0,
+  clientHellos: 0,
+  subscriptions: [],
+};
+const workspaces = new Map();
+const sessions = new Map();
+const sockets = new Set();
+let nextWorkspace = 1;
+let nextSession = 1;
+let nextPrompt = 1;
+
+if (sessionsFile) {
+  try {
+    const seeded = JSON.parse(await readFile(sessionsFile, "utf8"));
+    if (!Array.isArray(seeded)) process.exit(67);
+    for (const value of seeded) {
+      if (!value || typeof value.id !== "string" || typeof value.workspacePath !== "string") {
+        process.exit(67);
+      }
+      const workspace = ensureWorkspace(value.workspacePath);
+      sessions.set(value.id, {
+        id: value.id,
+        workspace,
+        title: typeof value.title === "string" ? value.title : "",
+        createdAt: Number.isSafeInteger(value.createdAt) ? value.createdAt : Date.now(),
+        updatedAt: Number.isSafeInteger(value.updatedAt) ? value.updatedAt : Date.now(),
+        ...(typeof value.model === "string" ? { model: value.model } : {}),
+        seq: 0,
+        journal: [],
+        subscribers: new Set(),
+      });
+    }
+  } catch (error) {
+    if (error?.code !== "ENOENT") process.exit(67);
+  }
+}
+
+await persistEvidence();
+if (pidFile) await writeFile(pidFile, String(process.pid));
+if (scenario === "early-exit") process.exit(42);
+
+const server = createServer(async (request, response) => {
+  try {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    const authenticated = request.headers.authorization === `Bearer ${token}`;
+    if (!authenticated) {
+      evidence.unauthorizedRequests += 1;
+      await persistEvidence();
+      return json(response, 401, envelope(null, 40112, "unauthorized"));
+    }
+    evidence.requests.push({
+      method: request.method,
+      path: url.pathname,
+      authenticated,
+    });
+    await persistEvidence();
+
+    if (request.method === "GET" && url.pathname === "/api/v1/healthz") {
+      return json(response, 200, envelope({ ok: true }));
+    }
+    if (request.method === "GET" && url.pathname === "/api/v1/models") {
+      return json(response, 200, envelope({
+        items: [
+          { provider: "fake", model: "fake-default", max_context_size: 128_000 },
+          { provider: "fake", model: "fake-high", max_context_size: 128_000, support_efforts: ["low", "medium", "high"] },
+        ],
+      }));
+    }
+    if (request.method === "POST" && url.pathname === "/api/v1/workspaces") {
+      const body = await readJson(request);
+      if (typeof body.root !== "string" || body.root.length === 0) {
+        return json(response, 400, envelope(null, 40001, "invalid root"));
+      }
+      const workspace = ensureWorkspace(body.root);
+      return json(response, 200, envelope(workspace));
+    }
+    const trustMatch = url.pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/(trust|untrust)$/);
+    if (trustMatch) {
+      const workspace = [...workspaces.values()].find(({ id }) => id === trustMatch[1]);
+      if (!workspace) return json(response, 404, envelope(null, 40410, "workspace not found"));
+      if (request.method === "POST") workspace.trusted = trustMatch[2] === "trust";
+      return json(response, 200, envelope({ trusted: workspace.trusted ?? false }));
+    }
+    const workspaceMatch = url.pathname.match(/^\/api\/v1\/workspaces\/([^/]+)$/);
+    if (request.method === "DELETE" && workspaceMatch) {
+      const workspace = [...workspaces.values()].find(({ id }) => id === workspaceMatch[1]);
+      if (workspace) workspaces.delete(workspace.root);
+      return json(response, 200, envelope(null));
+    }
+    if (request.method === "GET" && url.pathname === "/api/v1/sessions") {
+      const workspaceId = url.searchParams.get("workspace_id");
+      if (!workspaceId) return json(response, 400, envelope(null, 40001, "workspace required"));
+      const matches = [...sessions.values()].filter(({ workspace }) => workspace.id === workspaceId);
+      const beforeId = url.searchParams.get("before_id");
+      const start = beforeId === null ? 0 : matches.findIndex(({ id }) => id === beforeId) + 1;
+      const size = Number.isSafeInteger(pageSize) && pageSize > 0 ? Math.min(pageSize, 100) : 100;
+      const items = (start <= 0 && beforeId !== null ? [] : matches.slice(start, start + size))
+        .map(publicSession);
+      return json(response, 200, envelope({
+        items,
+        has_more: start + items.length < matches.length,
+      }));
+    }
+    if (request.method === "POST" && url.pathname === "/api/v1/sessions") {
+      const body = await readJson(request);
+      const workspace = [...workspaces.values()].find(({ id }) => id === body.workspace_id);
+      if (!workspace) return json(response, 404, envelope(null, 40410, "workspace not found"));
+      const now = Date.now();
+      const session = {
+        id: `session_fake_${nextSession++}`,
+        workspace,
+        title: "New session",
+        createdAt: now,
+        updatedAt: now,
+        ...(typeof body.agent_config?.model === "string" ? { model: body.agent_config.model } : {}),
+        seq: 0,
+        journal: [],
+        subscribers: new Set(),
+      };
+      sessions.set(session.id, session);
+      await persistSessions();
+      return json(response, 200, envelope(publicSession(session)));
+    }
+    const getSessionMatch = url.pathname.match(/^\/api\/v1\/sessions\/([^/]+)$/);
+    if (request.method === "GET" && getSessionMatch) {
+      const session = sessions.get(decodeURIComponent(getSessionMatch[1]));
+      if (!session) return json(response, 404, envelope(null, 40420, "session not found"));
+      return json(response, 200, envelope(publicSession(session)));
+    }
+    const statusMatch = url.pathname.match(/^\/api\/v1\/sessions\/([^/]+)\/status$/);
+    const profileMatch = url.pathname.match(/^\/api\/v1\/sessions\/([^/]+)\/profile$/);
+    if (request.method === "POST" && profileMatch) {
+      const session = sessions.get(decodeURIComponent(profileMatch[1]));
+      if (!session) return json(response, 404, envelope(null, 40401, "session not found"));
+      const body = await readJson(request);
+      evidence.profiles.push({ sessionId: session.id, permissionMode: body.agent_config?.permission_mode });
+      await persistEvidence();
+      if (scenario === "profile-reject" ||
+          (scenario === "profile-reject-auto" && body.agent_config?.permission_mode === "auto")) {
+        return json(response, 200, envelope(null, 40001, "permission mode rejected"));
+      }
+      session.permissionMode = body.agent_config?.permission_mode;
+      await persistSessions();
+      return json(response, 200, envelope(publicSession(session)));
+    }
+    if (request.method === "GET" && statusMatch) {
+      const session = sessions.get(decodeURIComponent(statusMatch[1]));
+      if (!session) return json(response, 404, envelope(null, 40420, "session not found"));
+      return json(response, 200, envelope({
+        busy: false,
+        ...(session.model ? { model: session.model } : {}),
+        thinking_level: "",
+        permission: "manual",
+        plan_mode: false,
+        swarm_mode: false,
+        context_tokens: 0,
+        max_context_tokens: 128_000,
+        context_usage: 0,
+      }));
+    }
+    const approvalMatch = url.pathname.match(
+      /^\/api\/v1\/sessions\/([^/]+)\/approvals\/([^/]+)$/,
+    );
+    if (request.method === "POST" && approvalMatch) {
+      const session = sessions.get(decodeURIComponent(approvalMatch[1]));
+      const approvalId = decodeURIComponent(approvalMatch[2]);
+      if (!session || session.rich?.approvalId !== approvalId) {
+        return json(response, 404, envelope(null, 40404, "approval not found"));
+      }
+      const body = await readJson(request);
+      if (body.decision !== "approved" && body.decision !== "rejected") {
+        return json(response, 400, envelope(null, 40001, "invalid decision"));
+      }
+      evidence.approvalDecisions.push({
+        approvalId,
+        decision: body.decision,
+        scope: body.scope ?? null,
+      });
+      await persistEvidence();
+      json(response, 200, envelope({ resolved: true, resolved_at: new Date().toISOString() }));
+      emit(session, "event.approval.resolved", {
+        type: "event.approval.resolved",
+        approval_id: approvalId,
+        decision: body.decision,
+        resolved_at: new Date().toISOString(),
+        agentId: "main",
+        sessionId: session.id,
+      });
+      setTimeout(() => emitRichQuestion(session), 2);
+      return;
+    }
+    const questionMatch = url.pathname.match(
+      /^\/api\/v1\/sessions\/([^/]+)\/questions\/([^/:]+)(:dismiss)?$/,
+    );
+    if (request.method === "POST" && questionMatch) {
+      const session = sessions.get(decodeURIComponent(questionMatch[1]));
+      const questionId = decodeURIComponent(questionMatch[2]);
+      if (!session || session.rich?.questionId !== questionId) {
+        return json(response, 404, envelope(null, 40405, "question not found"));
+      }
+      if (questionMatch[3] === ":dismiss") {
+        evidence.questionResponses.push({ questionId, action: "dismiss" });
+        await persistEvidence();
+        json(response, 200, envelope(
+          { dismissed: true, dismissed_at: new Date().toISOString() },
+          40909,
+          "question dismissed",
+        ));
+        emit(session, "event.question.dismissed", {
+          type: "event.question.dismissed",
+          question_id: questionId,
+          dismissed_at: new Date().toISOString(),
+          agentId: "main",
+          sessionId: session.id,
+        });
+        setTimeout(() => finishRichTurn(session, true), 2);
+        return;
+      }
+      const body = await readJson(request);
+      if (!body.answers || typeof body.answers !== "object") {
+        return json(response, 400, envelope(null, 40001, "invalid answers"));
+      }
+      evidence.questionResponses.push({ questionId, action: "answer", answers: body.answers });
+      await persistEvidence();
+      json(response, 200, envelope({ resolved: true, resolved_at: new Date().toISOString() }));
+      emit(session, "event.question.answered", {
+        type: "event.question.answered",
+        question_id: questionId,
+        answers: body.answers,
+        resolved_at: new Date().toISOString(),
+        agentId: "main",
+        sessionId: session.id,
+      });
+      setTimeout(() => finishRichTurn(session, false), 2);
+      return;
+    }
+    const promptMatch = url.pathname.match(/^\/api\/v1\/sessions\/([^/]+)\/prompts$/);
+    if (request.method === "POST" && promptMatch) {
+      const session = sessions.get(decodeURIComponent(promptMatch[1]));
+      if (!session) return json(response, 404, envelope(null, 40420, "session not found"));
+      const body = await readJson(request);
+      if (
+        !Array.isArray(body.content) ||
+        body.content.length === 0 ||
+        !body.content.every(validContentPart)
+      ) return json(response, 400, envelope(null, 40001, "invalid content"));
+      if (scenario === "image-reject" && body.content.some(({ type }) => type === "image")) {
+        return json(response, 400, envelope(null, 40001, "image rejected"));
+      }
+      const promptId = `prompt_fake_${nextPrompt++}`;
+      evidence.prompts.push({
+        sessionId: session.id,
+        promptId,
+        model: body.model ?? null,
+        thinking: body.thinking ?? null,
+        permissionMode: body.permission_mode ?? null,
+        content: body.content,
+      });
+      if (typeof body.model === "string") session.model = body.model;
+      session.updatedAt = Date.now();
+      await Promise.all([persistEvidence(), persistSessions()]);
+      json(response, 200, envelope({
+        prompt_id: promptId,
+        user_message_id: `message_user_${promptId}`,
+        status: "running",
+        content: body.content,
+        created_at: new Date().toISOString(),
+      }));
+      setTimeout(() => {
+        if (scenario === "multi-step" || scenario === "step-gap" || scenario === "legacy-mixed") {
+          emitStepScenario(session);
+        } else if (scenario.startsWith("rich")) {
+          emitRichTurn(session);
+        } else {
+          emitTextTurn(session);
+        }
+      }, 5);
+      return;
+    }
+    const abortMatch = url.pathname.match(
+      /^\/api\/v1\/sessions\/([^/]+)\/prompts\/([^/]+):abort$/,
+    );
+    if (request.method === "POST" && abortMatch) {
+      const session = sessions.get(decodeURIComponent(abortMatch[1]));
+      if (!session) return json(response, 404, envelope(null, 40420, "session not found"));
+      return json(response, 200, envelope({ aborted: true, at_seq: session.seq }));
+    }
+    return json(response, 404, envelope(null, 40400, "not found"));
+  } catch {
+    return json(response, 500, envelope(null, 50000, "internal error"));
+  }
+});
+
+server.on("upgrade", async (request, socket) => {
+  const url = new URL(request.url ?? "/", "http://127.0.0.1");
+  const protocols = String(request.headers["sec-websocket-protocol"] ?? "")
+    .split(",")
+    .map((value) => value.trim());
+  if (
+    scenario === "ws-reject" ||
+    (scenario === "ws-permanent" && evidence.authenticatedWebSockets > 0) ||
+    url.pathname !== "/api/v1/ws" ||
+    !protocols.includes(bearerProtocol)
+  ) {
+    evidence.unauthorizedRequests += 1;
+    await persistEvidence();
+    socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+    return;
+  }
+  const key = request.headers["sec-websocket-key"];
+  if (typeof key !== "string") return socket.destroy();
+  const accept = createHash("sha1")
+    .update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+    .digest("base64");
+  socket.write([
+    "HTTP/1.1 101 Switching Protocols",
+    "Upgrade: websocket",
+    "Connection: Upgrade",
+    `Sec-WebSocket-Accept: ${accept}`,
+    `Sec-WebSocket-Protocol: ${bearerProtocol}`,
+    "\r\n",
+  ].join("\r\n"));
+  evidence.authenticatedWebSockets += 1;
+  await persistEvidence();
+  const connection = { socket, buffer: Buffer.alloc(0), subscriptions: new Set() };
+  sockets.add(connection);
+  socket.on("data", (chunk) => receiveFrames(connection, chunk));
+  socket.on("close", () => removeConnection(connection));
+  socket.on("error", () => removeConnection(connection));
+  send(connection, {
+    type: "server_hello",
+    timestamp: new Date().toISOString(),
+    payload: {
+      ws_connection_id: "ws_fake_1",
+      protocol_version: 2,
+      max_event_buffer_size: 4096,
+      capabilities: { event_batching: false, compression: false },
+    },
+  });
+});
+
+server.listen(0, "127.0.0.1", () => {
+  const address = server.address();
+  if (!address || typeof address === "string") process.exit(66);
+  if (scenario !== "unready") {
+    if (scenario === "bad-ready") {
+      process.stdout.write(`Kimi server: http://0.0.0.0:${address.port}/#token=${token}\n`);
+    } else {
+      const readyToken = scenario === "bad-token" ? "wrong-fake-kimi-server-token" : token;
+      const readyUrl = `http://127.0.0.1:${address.port}/#token=${readyToken}`;
+      process.stdout.write(scenario === "current-ready"
+        ? `  Local:    ${readyUrl}\n`
+        : `Kimi server: ${readyUrl}\n`);
+    }
+    process.stdout.write(`ordinary Kimi stdout ${token}\n`);
+    process.stderr.write(`ordinary Kimi stderr ${token}\n`);
+  }
+});
+
+if (scenario === "ignore-term") process.on("SIGTERM", () => undefined);
+else process.once("SIGTERM", shutdown);
+process.once("SIGINT", shutdown);
+
+function receiveFrames(connection, chunk) {
+  connection.buffer = Buffer.concat([connection.buffer, chunk]);
+  while (connection.buffer.length >= 2) {
+    const first = connection.buffer[0];
+    const second = connection.buffer[1];
+    let length = second & 0x7f;
+    let offset = 2;
+    if (length === 126) {
+      if (connection.buffer.length < 4) return;
+      length = connection.buffer.readUInt16BE(2);
+      offset = 4;
+    } else if (length === 127) {
+      if (connection.buffer.length < 10) return;
+      const wide = connection.buffer.readBigUInt64BE(2);
+      if (wide > BigInt(Number.MAX_SAFE_INTEGER)) return connection.socket.destroy();
+      length = Number(wide);
+      offset = 10;
+    }
+    const masked = (second & 0x80) !== 0;
+    const maskBytes = masked ? 4 : 0;
+    if (connection.buffer.length < offset + maskBytes + length) return;
+    const mask = masked ? connection.buffer.subarray(offset, offset + 4) : undefined;
+    offset += maskBytes;
+    const payload = Buffer.from(connection.buffer.subarray(offset, offset + length));
+    connection.buffer = connection.buffer.subarray(offset + length);
+    if (mask) for (let index = 0; index < payload.length; index += 1) payload[index] ^= mask[index % 4];
+    const opcode = first & 0x0f;
+    if (opcode === 0x8) return connection.socket.end(serverFrame(Buffer.alloc(0), 0x8));
+    if (opcode === 0x9) {
+      connection.socket.write(serverFrame(payload, 0xA));
+      continue;
+    }
+    if (opcode !== 0x1) continue;
+    try {
+      handleControl(connection, JSON.parse(payload.toString("utf8")));
+    } catch {
+      connection.socket.destroy();
+      return;
+    }
+  }
+}
+
+function handleControl(connection, frame) {
+  if (frame?.type === "client_hello") {
+    evidence.clientHellos += 1;
+    void persistEvidence();
+    send(connection, {
+      type: "ack",
+      id: frame.id,
+      code: 0,
+      msg: "success",
+      payload: { accepted_subscriptions: [], resync_required: [], cursors: {} },
+    });
+    return;
+  }
+  if (frame?.type === "subscribe") {
+    const requested = Array.isArray(frame.payload?.session_ids) ? frame.payload.session_ids : [];
+    const accepted = requested.filter((id) => sessions.has(id));
+    const notFound = requested.filter((id) => !sessions.has(id));
+    for (const id of accepted) {
+      connection.subscriptions.add(id);
+      sessions.get(id).subscribers.add(connection);
+    }
+    evidence.subscriptions.push({
+      sessionIds: requested,
+      cursors: frame.payload?.cursors ?? null,
+    });
+    void persistEvidence();
+    if (scenario === "ws-resync" && accepted.some((id) => sessions.get(id)?.seq > 0)) {
+      send(connection, {
+        type: "ack",
+        id: frame.id,
+        code: 0,
+        msg: "success",
+        payload: {
+          accepted,
+          not_found: notFound,
+          resync_required: accepted,
+          cursors: Object.fromEntries(accepted.map((id) => [id, {
+            seq: sessions.get(id).seq,
+            epoch: "fake-epoch",
+          }])),
+        },
+      });
+      return;
+    }
+    send(connection, {
+      type: "ack",
+      id: frame.id,
+      code: 0,
+      msg: "success",
+      payload: {
+        accepted,
+        not_found: notFound,
+        resync_required: [],
+        cursors: Object.fromEntries(accepted.map((id) => [id, {
+          seq: sessions.get(id).seq,
+          epoch: "fake-epoch",
+        }])),
+      },
+    });
+    for (const id of accepted) {
+      const session = sessions.get(id);
+      const cursor = frame.payload?.cursors?.[id];
+      if (!cursor || cursor.epoch !== "fake-epoch") continue;
+      for (const event of session.journal.filter(({ seq }) => seq >= cursor.seq)) send(connection, event);
+    }
+  }
+}
+
+function emitTextTurn(session) {
+  if (scenario === "ws-recover" || scenario === "ws-permanent") {
+    emitRecoverTurn(session);
+    return;
+  }
+  if (scenario === "ws-resync") {
+    emitResyncTurn(session);
+    return;
+  }
+  const turnId = 1;
+  emit(session, "turn.started", {
+    type: "turn.started",
+    turnId,
+    origin: { kind: "user" },
+    prompt: "Say hello.",
+    agentId: "main",
+    sessionId: session.id,
+  });
+  emit(session, "assistant.delta", {
+    type: "assistant.delta",
+    turnId,
+    delta: "Hello from Kimi.",
+    agentId: "main",
+    sessionId: session.id,
+  }, true, 0);
+  emit(session, "turn.step.completed", {
+    type: "turn.step.completed",
+    turnId,
+    step: 1,
+    usage: { inputOther: 3, output: 4, inputCacheRead: 1, inputCacheCreation: 0 },
+    agentId: "main",
+    sessionId: session.id,
+  });
+  emit(session, "turn.ended", {
+    type: "turn.ended",
+    turnId,
+    reason: "completed",
+    agentId: "main",
+    sessionId: session.id,
+  });
+}
+
+function emitRecoverTurn(session) {
+  const turnId = 1;
+  emit(session, "turn.started", {
+    type: "turn.started",
+    turnId,
+    origin: { kind: "user" },
+    prompt: "Recover the stream.",
+    agentId: "main",
+    sessionId: session.id,
+  });
+  emit(session, "assistant.delta", {
+    type: "assistant.delta",
+    turnId,
+    delta: "Recovered.",
+    agentId: "main",
+    sessionId: session.id,
+  }, true, 0);
+  setTimeout(() => {
+    for (const connection of [...session.subscribers]) {
+      removeConnection(connection);
+      connection.socket.destroy();
+    }
+    emit(session, "turn.step.completed", {
+      type: "turn.step.completed",
+      turnId,
+      step: 1,
+      usage: { inputOther: 2, output: 1, inputCacheRead: 0, inputCacheCreation: 0 },
+      agentId: "main",
+      sessionId: session.id,
+    });
+    emit(session, "turn.ended", {
+      type: "turn.ended",
+      turnId,
+      reason: "completed",
+      agentId: "main",
+      sessionId: session.id,
+    });
+  }, 5);
+}
+
+function emitResyncTurn(session) {
+  const turnId = 1;
+  emit(session, "turn.started", {
+    type: "turn.started",
+    turnId,
+    origin: { kind: "user" },
+    prompt: "Require resync.",
+    agentId: "main",
+    sessionId: session.id,
+  });
+  for (const connection of session.subscribers) send(connection, {
+    type: "resync_required",
+    timestamp: new Date().toISOString(),
+    payload: {
+      session_id: session.id,
+      reason: "buffer_overflow",
+      current_seq: session.seq,
+      epoch: "fake-epoch",
+    },
+  });
+}
+
+function emitStepScenario(session) {
+  const turnId = 1;
+  if (scenario === "step-gap") {
+    emit(session, "turn.started", {
+      type: "turn.started", turnId, origin: { kind: "user" }, prompt: "Gap.",
+      agentId: "main", sessionId: session.id,
+    });
+    emit(session, "turn.step.started", {
+      type: "turn.step.started", turnId, step: 1, agentId: "main", sessionId: session.id,
+    });
+    emit(session, "assistant.delta", {
+      type: "assistant.delta", turnId, delta: "abc",
+      agentId: "main", sessionId: session.id,
+    }, true, 0);
+    emit(session, "assistant.delta", {
+      type: "assistant.delta", turnId, delta: "def",
+      agentId: "main", sessionId: session.id,
+    }, true, 10);
+    return;
+  }
+  if (scenario === "legacy-mixed") {
+    emit(session, "turn.started", {
+      type: "turn.started", turnId, origin: { kind: "user" }, prompt: "Legacy.",
+      agentId: "main", sessionId: session.id,
+    });
+    emit(session, "turn.step.started", {
+      type: "turn.step.started", turnId, step: 1, agentId: "main", sessionId: session.id,
+    });
+    emit(session, "assistant.delta", {
+      type: "assistant.delta", turnId, delta: "hello ",
+      agentId: "main", sessionId: session.id,
+    }, true);
+    emit(session, "assistant.delta", {
+      type: "assistant.delta", turnId, delta: "world",
+      agentId: "main", sessionId: session.id,
+    }, true);
+    emit(session, "thinking.delta", {
+      type: "thinking.delta", turnId, delta: "think",
+      agentId: "main", sessionId: session.id,
+    }, true);
+    emit(session, "assistant.delta", {
+      type: "assistant.delta", turnId, delta: "!",
+      agentId: "main", sessionId: session.id,
+    }, true, 11);
+    emit(session, "assistant.delta", {
+      type: "assistant.delta", turnId, delta: "",
+      agentId: "main", sessionId: session.id,
+    }, true, 12);
+    emit(session, "turn.step.completed", {
+      type: "turn.step.completed", turnId, step: 1,
+      usage: { inputOther: 3, output: 4, inputCacheRead: 1, inputCacheCreation: 0 },
+      agentId: "main", sessionId: session.id,
+    });
+    emit(session, "turn.ended", {
+      type: "turn.ended", turnId, reason: "completed",
+      agentId: "main", sessionId: session.id,
+    });
+    return;
+  }
+  emit(session, "turn.started", {
+    type: "turn.started", turnId, origin: { kind: "user" }, prompt: "Multi-step.",
+    agentId: "main", sessionId: session.id,
+  });
+  emit(session, "turn.step.started", {
+    type: "turn.step.started", turnId, step: 1, agentId: "main", sessionId: session.id,
+  });
+  emit(session, "thinking.delta", {
+    type: "thinking.delta", turnId, delta: "",
+    agentId: "main", sessionId: session.id,
+  }, true, 0);
+  emit(session, "thinking.delta", {
+    type: "thinking.delta", turnId, delta: "计划。",
+    agentId: "main", sessionId: session.id,
+  }, true, 0);
+  emit(session, "assistant.delta", {
+    type: "assistant.delta", turnId, delta: "第一步。",
+    agentId: "main", sessionId: session.id,
+  }, true, 0);
+  emit(session, "turn.started", {
+    type: "turn.started", turnId, origin: { kind: "subagent" }, prompt: "Sub.",
+    agentId: "subagent-1", sessionId: session.id,
+  });
+  emit(session, "assistant.delta", {
+    type: "assistant.delta", turnId, delta: "subagent noise",
+    agentId: "subagent-1", sessionId: session.id,
+  }, true, 0);
+  emit(session, "thinking.delta", {
+    type: "thinking.delta", turnId, delta: "subagent thinking",
+    agentId: "subagent-1", sessionId: session.id,
+  }, true, 0);
+  emit(session, "turn.ended", {
+    type: "turn.ended", turnId, reason: "completed",
+    agentId: "subagent-1", sessionId: session.id,
+  });
+  emit(session, "turn.step.started", {
+    type: "turn.step.started", turnId, step: 2, agentId: "main", sessionId: session.id,
+  });
+  emit(session, "assistant.delta", {
+    type: "assistant.delta", turnId, delta: "ABCDEF",
+    agentId: "main", sessionId: session.id,
+  }, true, 0);
+  emit(session, "assistant.delta", {
+    type: "assistant.delta", turnId, delta: "ABCDEF",
+    agentId: "main", sessionId: session.id,
+  }, true, 0);
+  emit(session, "assistant.delta", {
+    type: "assistant.delta", turnId, delta: "DEFG",
+    agentId: "main", sessionId: session.id,
+  }, true, 3);
+  emit(session, "assistant.delta", {
+    type: "assistant.delta", turnId, delta: "HI",
+    agentId: "main", sessionId: session.id,
+  }, true, 7);
+  emit(session, "assistant.delta", {
+    type: "assistant.delta", turnId, delta: "中😀",
+    agentId: "main", sessionId: session.id,
+  }, true, 9);
+  emit(session, "assistant.delta", {
+    type: "assistant.delta", turnId, delta: "😀尾",
+    agentId: "main", sessionId: session.id,
+  }, true, 12);
+  emit(session, "assistant.delta", {
+    type: "assistant.delta", turnId, delta: "legacy",
+    agentId: "main", sessionId: session.id,
+  }, true);
+  emit(session, "assistant.delta", {
+    type: "assistant.delta", turnId, delta: "K",
+    agentId: "main", sessionId: session.id,
+  }, true, 21);
+  emit(session, "thinking.delta", {
+    type: "thinking.delta", turnId, delta: "复盘。",
+    agentId: "main", sessionId: session.id,
+  }, true, 0);
+  emit(session, "thinking.delta", {
+    type: "thinking.delta", turnId, delta: "😀",
+    agentId: "main", sessionId: session.id,
+  }, true, 3);
+  emit(session, "thinking.delta", {
+    type: "thinking.delta", turnId, delta: "结束",
+    agentId: "main", sessionId: session.id,
+  }, true, 5);
+  emit(session, "thinking.delta", {
+    type: "thinking.delta", turnId, delta: "结束",
+    agentId: "main", sessionId: session.id,
+  }, true, 5);
+  emit(session, "turn.step.completed", {
+    type: "turn.step.completed", turnId, step: 2,
+    usage: { inputOther: 8, output: 6, inputCacheRead: 2, inputCacheCreation: 0 },
+    agentId: "main", sessionId: session.id,
+  });
+  emit(session, "turn.ended", {
+    type: "turn.ended", turnId, reason: "completed",
+    agentId: "main", sessionId: session.id,
+  });
+}
+
+function emitRichTurn(session) {
+  const turnId = 1;
+  const toolCallId = `tool_${session.id}`;
+  const approvalId = `approval_${session.id}`;
+  const toolName = scenario === "rich-mcp" ? "mcp__configured__lookup" : "shell";
+  session.rich = { turnId, toolCallId, approvalId };
+  emit(session, "turn.started", {
+    type: "turn.started",
+    turnId,
+    origin: { kind: "user" },
+    prompt: "Run the rich flow.",
+    agentId: "main",
+    sessionId: session.id,
+  });
+  emit(session, "thinking.delta", {
+    type: "thinking.delta",
+    turnId,
+    delta: "",
+    agentId: "main",
+    sessionId: session.id,
+  }, true, 0);
+  emit(session, "thinking.delta", {
+    type: "thinking.delta",
+    turnId,
+    delta: "Thinking.",
+    agentId: "main",
+    sessionId: session.id,
+  }, true, 0);
+  emit(session, "tool.call.delta", {
+    type: "tool.call.delta",
+    turnId,
+    toolCallId,
+    name: toolName,
+    argumentsPart: "{\"command\":",
+    agentId: "main",
+    sessionId: session.id,
+  }, true);
+  emit(session, "tool.call.delta", {
+    type: "tool.call.delta",
+    turnId,
+    toolCallId,
+    name: toolName,
+    argumentsPart: "\"npm test\"}",
+    agentId: "main",
+    sessionId: session.id,
+  }, true);
+  emit(session, "permission.approval.requested", {
+    type: "permission.approval.requested",
+    turnId,
+    toolCallId,
+    toolName,
+    action: "Run tests",
+    display: { command: "npm test" },
+    toolInput: { command: "npm test" },
+    agentId: "main",
+    sessionId: session.id,
+  });
+  emit(session, "tool.progress", {
+    type: "tool.progress",
+    turnId,
+    toolCallId,
+    update: { kind: "status", text: "Running tests" },
+    agentId: "main",
+    sessionId: session.id,
+  });
+  emit(session, "event.approval.requested", {
+    type: "event.approval.requested",
+    approval_id: approvalId,
+    session_id: session.id,
+    turn_id: turnId,
+    tool_call_id: toolCallId,
+    tool_name: toolName,
+    action: "Run tests",
+    tool_input_display: { command: "npm test" },
+    created_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 86_400_000).toISOString(),
+    agentId: "main",
+    sessionId: session.id,
+  });
+}
+
+function emitRichQuestion(session) {
+  const questionId = `question_${session.id}`;
+  session.rich.questionId = questionId;
+  emit(session, "event.question.requested", {
+    type: "event.question.requested",
+    question_id: questionId,
+    session_id: session.id,
+    turn_id: session.rich.turnId,
+    tool_call_id: session.rich.toolCallId,
+    questions: [
+      {
+        id: "q_single",
+        header: "Target",
+        question: "Choose a target",
+        body: "Choose one target",
+        options: [
+          { id: "single_staging", label: "Staging" },
+          { id: "single_production", label: "Production" },
+        ],
+        multi_select: false,
+        allow_other: false,
+      },
+      {
+        id: "q_multi",
+        header: "Checks",
+        question: "Choose checks",
+        options: [
+          { id: "multi_unit", label: "Unit" },
+          { id: "multi_e2e", label: "E2E" },
+        ],
+        multi_select: true,
+        allow_other: false,
+      },
+      {
+        id: "q_other",
+        question: "Custom target",
+        options: [
+          { id: "other_a", label: "A" },
+          { id: "other_b", label: "B" },
+        ],
+        multi_select: false,
+        allow_other: true,
+      },
+      {
+        id: "q_multi_other",
+        question: "Checks plus custom",
+        options: [
+          { id: "mo_unit", label: "Unit" },
+          { id: "mo_e2e", label: "E2E" },
+        ],
+        multi_select: true,
+        allow_other: true,
+      },
+      {
+        id: "q_skip",
+        question: "Optional follow-up",
+        options: [
+          { id: "skip_yes", label: "Yes" },
+          { id: "skip_no", label: "No" },
+        ],
+        multi_select: false,
+        allow_other: false,
+      },
+    ],
+    created_at: new Date().toISOString(),
+    agentId: "main",
+    sessionId: session.id,
+  });
+}
+
+function finishRichTurn(session, dismissed) {
+  emit(session, "tool.result", {
+    type: "tool.result",
+    turnId: session.rich.turnId,
+    toolCallId: session.rich.toolCallId,
+    output: dismissed ? { error: "denied" } : { stdout: "tests passed" },
+    isError: dismissed,
+    agentId: "main",
+    sessionId: session.id,
+  });
+  emit(session, "assistant.delta", {
+    type: "assistant.delta",
+    turnId: session.rich.turnId,
+    delta: dismissed ? "Denied." : "Done.",
+    agentId: "main",
+    sessionId: session.id,
+  }, true, 0);
+  emit(session, "turn.step.completed", {
+    type: "turn.step.completed",
+    turnId: session.rich.turnId,
+    step: 1,
+    usage: { inputOther: 10, output: 8, inputCacheRead: 3, inputCacheCreation: 0 },
+    agentId: "main",
+    sessionId: session.id,
+  });
+  emit(session, "turn.ended", {
+    type: "turn.ended",
+    turnId: session.rich.turnId,
+    reason: "completed",
+    agentId: "main",
+    sessionId: session.id,
+  });
+}
+
+function emit(session, type, payload, volatile = false, offset) {
+  if (!volatile) session.seq += 1;
+  const frame = {
+    type,
+    seq: session.seq,
+    epoch: "fake-epoch",
+    ...(volatile ? { volatile: true } : {}),
+    ...(offset === undefined ? {} : { offset }),
+    session_id: session.id,
+    timestamp: new Date().toISOString(),
+    payload,
+  };
+  if (!volatile) session.journal.push(frame);
+  for (const connection of session.subscribers) send(connection, frame);
+}
+
+function send(connection, value) {
+  connection.socket.write(serverFrame(Buffer.from(JSON.stringify(value))));
+}
+
+function serverFrame(payload, opcode = 0x1) {
+  if (payload.length < 126) return Buffer.concat([Buffer.from([0x80 | opcode, payload.length]), payload]);
+  if (payload.length <= 0xffff) {
+    const header = Buffer.alloc(4);
+    header[0] = 0x80 | opcode;
+    header[1] = 126;
+    header.writeUInt16BE(payload.length, 2);
+    return Buffer.concat([header, payload]);
+  }
+  const header = Buffer.alloc(10);
+  header[0] = 0x80 | opcode;
+  header[1] = 127;
+  header.writeBigUInt64BE(BigInt(payload.length), 2);
+  return Buffer.concat([header, payload]);
+}
+
+function removeConnection(connection) {
+  sockets.delete(connection);
+  for (const id of connection.subscriptions) sessions.get(id)?.subscribers.delete(connection);
+}
+
+function ensureWorkspace(root) {
+  let workspace = workspaces.get(root);
+  if (!workspace) {
+    workspace = { id: `ws_fake_${nextWorkspace++}`, root };
+    workspaces.set(root, workspace);
+  }
+  return workspace;
+}
+
+function publicSession(session) {
+  return {
+    id: session.id,
+    workspace_id: session.workspace.id,
+    title: session.title,
+    created_at: new Date(session.createdAt).toISOString(),
+    updated_at: new Date(session.updatedAt).toISOString(),
+    busy: false,
+    metadata: { cwd: session.workspace.root },
+    agent_config: { model: session.model ?? "" },
+  };
+}
+
+function validContentPart(part) {
+  if (part?.type === "text") return typeof part.text === "string";
+  return part?.type === "image" &&
+    part.source?.kind === "base64" &&
+    typeof part.source.media_type === "string" &&
+    typeof part.source.data === "string";
+}
+
+async function shutdown() {
+  for (const connection of sockets) connection.socket.destroy();
+  sockets.clear();
+  server.closeAllConnections();
+  server.close(() => process.exit(0));
+}
+
+async function readJson(request) {
+  let source = "";
+  for await (const chunk of request) source += chunk;
+  return source.length === 0 ? {} : JSON.parse(source);
+}
+
+function envelope(data, code = 0, msg = "success") {
+  return { code, msg, data, request_id: `req_${Date.now()}` };
+}
+
+function json(response, status, value) {
+  response.writeHead(status, { "content-type": "application/json" });
+  response.end(JSON.stringify(value));
+}
+
+async function persistEvidence() {
+  if (evidenceFile) await writeFile(evidenceFile, JSON.stringify(evidence));
+}
+
+async function persistSessions() {
+  if (!sessionsFile) return;
+  await writeFile(sessionsFile, JSON.stringify([...sessions.values()].map((session) => ({
+    id: session.id,
+    workspacePath: session.workspace.root,
+    title: session.title,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    ...(session.model ? { model: session.model } : {}),
+  }))));
+}

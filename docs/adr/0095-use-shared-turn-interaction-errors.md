@@ -1,0 +1,3 @@
+# Use Shared Turn Interaction Errors
+
+Approval and Question response commands share the three codes `TURN_INTERACTION_NOT_FOUND`, `TURN_INTERACTION_ALREADY_RESOLVED`, and `TURN_INTERACTION_INVALIDATED`, each identifying whether the interaction kind is approval or question, rather than maintaining duplicate error families. These codes replace `APPROVAL_NOT_FOUND`, `APPROVAL_ALREADY_RESOLVED`, and `APPROVAL_INVALIDATED` in ADR-0035, so the closed V0.1 `MuhaErrorData` union remains at twenty-five codes. They are Command Rejections carried through the existing `MuhaError` wrapper and never determine an accepted Turn's terminal result by themselves.

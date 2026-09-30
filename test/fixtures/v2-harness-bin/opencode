@@ -1,0 +1,531 @@
+#!/usr/bin/env node
+import { createServer } from "node:http";
+import { readFile, rename, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+
+if (JSON.stringify(process.argv.slice(2)) !== JSON.stringify(["serve", "--stdio", "--port", "0"])) {
+  process.exit(64);
+}
+const password = process.env.OPENCODE_PASSWORD;
+if (!password || process.env.OPENCODE_SERVER_PASSWORD) process.exit(65);
+const authorization = "Basic " + Buffer.from("opencode:" + password).toString("base64");
+const evidenceFile = process.env.MUHA_V2_EVIDENCE_FILE;
+if (process.env.MUHA_V2_PID_FILE) await writeFile(process.env.MUHA_V2_PID_FILE, String(process.pid));
+const evidence = { unauthenticated: 0, authenticated: 0, requests: [], created: 0, removed: 0,
+  createdPermissions: [], prompts: [], permissions: [], forms: [], interrupts: [] };
+let evidenceWrite = Promise.resolve();
+let evidenceSequence = 0;
+function persistEvidence() {
+  if (!evidenceFile) return Promise.resolve();
+  const snapshot = JSON.stringify(evidence);
+  const temporaryFile = `${evidenceFile}.${process.pid}.${++evidenceSequence}.tmp`;
+  evidenceWrite = evidenceWrite.then(async () => {
+    await writeFile(temporaryFile, snapshot);
+    await rename(temporaryFile, evidenceFile);
+  });
+  return evidenceWrite;
+}
+const sessions = new Map();
+const streams = new Set();
+const pendingPermissions = new Map();
+const pendingForms = new Map();
+const rejectedForms = new Set();
+let nextSession = 1;
+let nextMessage = 1;
+let eventConnections = 0;
+if (process.env.MUHA_V2_SESSIONS_FILE) {
+  const seeded = JSON.parse(await readFile(process.env.MUHA_V2_SESSIONS_FILE, "utf8"));
+  for (const value of seeded) {
+    sessions.set(value.id, {
+      id: value.id,
+      projectID: "project-v2",
+      location: { directory: value.directory },
+      time: { created: value.createdAt ?? Date.now(), updated: value.updatedAt ?? Date.now() },
+      ...(value.title === undefined ? {} : { title: value.title }),
+      ...(value.model === undefined ? {} : { model: value.model }),
+      seq: 0, messages: [],
+    });
+  }
+}
+const server = createServer(async (request, response) => {
+  const url = new URL(request.url ?? "/", "http://127.0.0.1");
+  evidence.requests.push(url.pathname);
+  if (request.headers.authorization !== authorization) {
+    evidence.unauthenticated += 1;
+    response.writeHead(401).end();
+  } else if (url.pathname === "/api/info") {
+    evidence.authenticated += 1;
+    json(response, 200, {
+        version: process.env.MUHA_V2_VERSION ?? "2.0.11",
+        pid: process.pid,
+        urls: ["http://127.0.0.1:" + server.address().port],
+        paths: { tmp: "/tmp/opencode" },
+    });
+  } else if (request.method === "GET" && url.pathname === "/api/event") {
+    eventConnections += 1;
+    response.writeHead(200, {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache",
+      connection: "keep-alive",
+    });
+    response.write("data: " + JSON.stringify({ type: "server.connected", data: {} }) + "\n\n");
+    streams.add(response);
+    request.once("close", () => streams.delete(response));
+    if (process.env.MUHA_V2_IDLE_DISCONNECT === "once" && eventConnections === 1) {
+      setTimeout(() => response.end(), 10);
+    }
+  } else if (request.method === "GET" && url.pathname === "/api/plugin") {
+    const directory = url.searchParams.get("location[directory]") ?? "";
+    json(response, 200, {
+      location: { directory },
+      data: process.env.MUHA_V2_PLUGIN_STATE === "missing" ? [] : [{
+        id: "muha.ordered-input",
+        source: { type: "local", path: join(process.env.OPENCODE_CONFIG_DIR, "plugins", "muha-order.js") },
+        features: { server: true },
+        state: process.env.MUHA_V2_PLUGIN_STATE === "failed"
+          ? { status: "failed", error: "controlled plugin failure" }
+          : { status: "active" },
+      }],
+    });
+  } else if (request.method === "POST" && url.pathname === "/api/session") {
+    const body = JSON.parse(await readBody(request));
+    const directory = body.location?.directory;
+    if (typeof directory !== "string") {
+      json(response, 400, { error: "missing location" });
+    } else {
+      const id = "ses_v2_" + nextSession++;
+      const now = Date.now();
+      const session = {
+        id,
+        projectID: "project-v2",
+        location: { directory },
+        time: { created: now, updated: now },
+        cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        ...(body.model === undefined ? {} : { model: {
+          ...body.model,
+          ...(process.env.MUHA_V2_NATIVE_VARIANT === undefined
+            ? {} : { variant: process.env.MUHA_V2_NATIVE_VARIANT }),
+        } }),
+        ...(body.permissions === undefined ? {} : { permissions: body.permissions }),
+        seq: 0,
+        interrupted: false,
+        messages: [],
+      };
+      sessions.set(id, session);
+      evidence.created += 1;
+      evidence.createdPermissions.push(body.permissions);
+      json(response, 200, process.env.MUHA_V2_CREATE_RESPONSE === "malformed"
+        ? { data: { wrong: id } } : { data: session });
+    }
+  } else if (request.method === "GET" && url.pathname === "/api/session") {
+    const directory = url.searchParams.get("directory");
+    json(response, 200, {
+      data: [...sessions.values()].filter((session) => session.location.directory === directory),
+      cursor: {},
+    });
+  } else if (request.method === "GET" && url.pathname === "/api/model") {
+    const directory = url.searchParams.get("location[directory]") ?? "";
+    json(response, 200, {
+      location: { directory },
+      data: [{
+        id: "deepseek-v4.1-flash",
+        modelID: "deepseek-v4.1-flash",
+        providerID: "opencode-go",
+        capabilities: { tools: true,
+          input: process.env.MUHA_V2_IMAGE_MODEL === "text-only" ? ["text"] : ["text", "image"],
+          output: ["text"] },
+        variants: [{ id: "high" }, { id: "low" }],
+      }, {
+        id: "other",
+        modelID: "other",
+        providerID: "opencode-go",
+        capabilities: { tools: true, input: ["text", "image"], output: ["text"] },
+        variants: [{ id: "high" }, { id: "low" }],
+      }, {
+        id: "minimal", modelID: "minimal", providerID: "opencode-go",
+        capabilities: { tools: false, input: ["text"], output: ["text"] }, variants: [],
+      }],
+    });
+  } else if (request.method === "GET" && url.pathname === "/api/model/default") {
+    const directory = url.searchParams.get("location[directory]") ?? "";
+    json(response, 200, {
+      location: { directory },
+      data: { id: "deepseek-v4.1-flash", modelID: "deepseek-v4.1-flash",
+        providerID: "opencode-go",
+        capabilities: { tools: true,
+          input: process.env.MUHA_V2_IMAGE_MODEL === "text-only" ? ["text"] : ["text", "image"],
+          output: ["text"] },
+        variants: [{ id: "high" }, { id: "low" }] },
+    });
+  } else if (request.method === "POST" && /^\/api\/session\/[^/]+\/model$/.test(url.pathname)) {
+    const id = decodeURIComponent(url.pathname.split("/")[3]);
+    const session = sessions.get(id);
+    if (!session) json(response, 404, { _tag: "SessionNotFoundError", sessionID: id });
+    else {
+      const body = JSON.parse(await readBody(request));
+      session.model = body.model;
+      response.writeHead(204).end();
+    }
+  } else if (request.method === "POST" && /^\/api\/session\/[^/]+\/interrupt$/.test(url.pathname)) {
+    const id = decodeURIComponent(url.pathname.split("/")[3]);
+    const session = sessions.get(id);
+    if (!session) json(response, 404, { error: "not found" });
+    else {
+      session.interrupted = true;
+      evidence.interrupts.push(id);
+      emit(session, "session.execution.interrupted", {});
+      for (const [requestID, waiting] of pendingPermissions) {
+        if (waiting.session !== session) continue;
+        pendingPermissions.delete(requestID);
+        waiting.resolve();
+      }
+      for (const [formID, waiting] of pendingForms) {
+        if (waiting.session !== session) continue;
+        pendingForms.delete(formID);
+        waiting.resolve();
+      }
+      json(response, 200, { interrupted: true });
+    }
+  } else if (request.method === "PATCH" && /^\/api\/session\/[^/]+$/.test(url.pathname)) {
+    const id = decodeURIComponent(url.pathname.split("/")[3]);
+    const session = sessions.get(id);
+    if (!session) json(response, 404, { error: "not found" });
+    else {
+      const body = JSON.parse(await readBody(request));
+      if (body.permissions !== undefined) session.permissions = body.permissions;
+      response.writeHead(204).end();
+    }
+  } else if (request.method === "POST" && /^\/api\/session\/[^/]+\/permission\/[^/]+\/reply$/.test(url.pathname)) {
+    const id = decodeURIComponent(url.pathname.split("/")[3]);
+    const requestID = decodeURIComponent(url.pathname.split("/")[5]);
+    const waiting = pendingPermissions.get(requestID);
+    if (!waiting || waiting.session.id !== id) json(response, 404, { error: "not found" });
+    else {
+      const body = JSON.parse(await readBody(request));
+      if (!(["once", "reject"].includes(body.decision))) json(response, 400, { error: "bad decision" });
+      else {
+        evidence.permissions.push({ sessionID: id, requestID, decision: body.decision });
+        emit(waiting.session, "permission.replied", { requestID, reply: body.decision }, false);
+        pendingPermissions.delete(requestID);
+        waiting.resolve();
+        response.writeHead(204).end();
+      }
+    }
+  } else if (request.method === "POST" && /^\/api\/session\/[^/]+\/form\/[^/]+\/reply$/.test(url.pathname)) {
+    const id = decodeURIComponent(url.pathname.split("/")[3]);
+    const formID = decodeURIComponent(url.pathname.split("/")[5]);
+    const waiting = pendingForms.get(formID);
+    if (!waiting || waiting.session.id !== id) json(response, 404, { error: "not found" });
+    else {
+      const body = JSON.parse(await readBody(request));
+      if (process.env.MUHA_V2_FORM_REJECT_ONCE && !rejectedForms.has(formID)) {
+        rejectedForms.add(formID);
+        json(response, 422, { error: "controlled native Form rejection" });
+      } else {
+        evidence.forms.push({ sessionID: id, formID, action: "answer", answer: body.answer });
+        emit(waiting.session, "form.replied", { id: formID, answer: body.answer }, false);
+        pendingForms.delete(formID);
+        waiting.resolve();
+        response.writeHead(204).end();
+      }
+    }
+  } else if (request.method === "DELETE" && /^\/api\/session\/[^/]+\/form\/[^/]+$/.test(url.pathname)) {
+    const id = decodeURIComponent(url.pathname.split("/")[3]);
+    const formID = decodeURIComponent(url.pathname.split("/")[5]);
+    const waiting = pendingForms.get(formID);
+    if (!waiting || waiting.session.id !== id) json(response, 404, { error: "not found" });
+    else {
+      evidence.forms.push({ sessionID: id, formID, action: "dismiss" });
+      emit(waiting.session, "form.cancelled", { id: formID }, false);
+      pendingForms.delete(formID);
+      waiting.resolve();
+      response.writeHead(204).end();
+    }
+  } else if (request.method === "GET" && /^\/api\/session\/[^/]+$/.test(url.pathname)) {
+    const id = decodeURIComponent(url.pathname.slice("/api/session/".length));
+    const session = sessions.get(id);
+    if (!session) json(response, 404, { _tag: "SessionNotFoundError", sessionID: id });
+    else json(response, 200, { data: session });
+  } else if (request.method === "GET" && /^\/api\/session\/[^/]+\/message$/.test(url.pathname)) {
+    const id = decodeURIComponent(url.pathname.split("/")[3]);
+    const session = sessions.get(id);
+    if (!session) json(response, 404, { error: "not found" });
+    else if (process.env.MUHA_V2_MESSAGE_PAGES === "two" && session.messages.length > 0) {
+      const cursor = url.searchParams.get("cursor");
+      if (cursor && url.searchParams.has("order")) {
+        json(response, 400, { _tag: "InvalidCursorError", message: "Cursor cannot be combined with order" });
+      } else if (cursor === null) {
+        json(response, 200, { data: session.messages.slice(-1), cursor: { next: "older" } });
+      } else {
+        json(response, 200, { data: session.messages.slice(0, -1), cursor: {} });
+      }
+    } else json(response, 200, { data: session.messages, cursor: {} });
+  } else if (request.method === "GET" && /^\/api\/session\/[^/]+\/message\/[^/]+$/.test(url.pathname)) {
+    const id = decodeURIComponent(url.pathname.split("/")[3]);
+    const messageID = decodeURIComponent(url.pathname.split("/")[5]);
+    const message = sessions.get(id)?.messages.find((item) => item.id === messageID);
+    if (!message) json(response, 404, { error: "not found" });
+    else json(response, 200, { data: message });
+  } else if (request.method === "POST" && /^\/api\/session\/[^/]+\/prompt$/.test(url.pathname)) {
+    const id = decodeURIComponent(url.pathname.split("/")[3]);
+    const session = sessions.get(id);
+    if (!session) json(response, 404, { error: "not found" });
+    else {
+      const body = JSON.parse(await readBody(request));
+      if (process.env.MUHA_V2_PROMPT_REJECT === "all" ||
+          (process.env.MUHA_V2_PROMPT_REJECT === "image" && Array.isArray(body.files) && body.files.length > 0)) {
+        json(response, 400, { error: "controlled prompt rejection" });
+        await persistEvidence();
+        return;
+      }
+      const inboxID = body.id ?? "msg_" + nextMessage++;
+      if (!/^msg_/.test(inboxID)) return json(response, 400, { error: "invalid message id" });
+      const inbox = {
+        id: inboxID,
+        sessionID: id,
+        time: { created: Date.now() },
+        type: "user",
+        payload: { text: body.text },
+        delivery: "steer",
+      };
+      session.interrupted = false;
+      evidence.prompts.push({ sessionID: id, text: body.text, files: body.files,
+        metadata: body.metadata, model: session.model });
+      json(response, 200, { data: inbox });
+      setTimeout(() => { void runTextTurn(session, inbox); }, 5);
+    }
+  } else {
+    response.writeHead(404).end();
+  }
+  await persistEvidence();
+});
+server.listen(0, "127.0.0.1", () => {
+  process.stdout.write(process.env.MUHA_V2_READY === "malformed"
+    ? "not-json\n"
+    : JSON.stringify({ url: "http://127.0.0.1:" + server.address().port }) + "\n");
+});
+process.stdin.resume();
+process.stdin.on("end", () => server.close());
+
+function json(response, status, value) {
+  response.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(value));
+}
+
+async function readBody(request) {
+  let body = "";
+  for await (const chunk of request) body += chunk;
+  return body;
+}
+
+function emit(session, type, data, durable = true) {
+  const event = {
+    id: "evt_" + (session.seq + 1),
+    created: Date.now(),
+    type,
+    location: session.location,
+    ...(durable ? { durable: { aggregateID: session.id, seq: ++session.seq, version: 1 } } : {}),
+    data: { sessionID: session.id, ...data },
+  };
+  for (const stream of streams) stream.write("data: " + JSON.stringify(event) + "\n\n");
+}
+
+async function runTextTurn(session, inbox) {
+  emit(session, "session.inbox.enqueued", { inboxID: inbox.id, item: inbox });
+  emit(session, "session.execution.started", {});
+  emit(session, "session.inbox.delivered", { inboxID: inbox.id });
+  if (process.env.MUHA_V2_STREAM === "disconnect") {
+    for (const stream of streams) stream.end();
+    return;
+  }
+  if (process.env.MUHA_V2_STREAM === "private-gap") session.seq += 1;
+  const outputs = process.env.MUHA_V2_USAGE === "multi"
+    ? ["Intermediate", "OpenCode v2: " + inbox.payload.text]
+    : [process.env.MUHA_V2_FINAL === "blank" ? "   " : "OpenCode v2: " + inbox.payload.text];
+  for (const [index, output] of outputs.entries()) {
+    const assistantMessageID = "msg_assistant_" + nextMessage++;
+    const message = {
+      id: assistantMessageID,
+      time: { created: Date.now(), completed: Date.now() },
+      type: "assistant",
+      agent: "build",
+      model: { providerID: "opencode-go", id: "deepseek-v4.1-flash" },
+      content: [{ type: "text", text: output }],
+      tokens: { input: 4 + index, output: 6 + index, reasoning: index,
+        cache: { read: index, write: 0 } },
+    };
+    if (process.env.MUHA_V2_STREAM !== "gap") {
+      emit(session, "session.step.started", {
+        assistantMessageID,
+        agent: "build",
+        model: message.model,
+        started: Date.now(),
+      });
+    }
+    if (process.env.MUHA_V2_RETRY) {
+      const retry = process.env.MUHA_V2_RETRY;
+      if (retry === "after-text" || retry === "after-reasoning") {
+        emit(session, retry === "after-text" ? "session.text.delta" : "session.reasoning.delta",
+          { assistantMessageID, ordinal: 0, delta: "Already visible." }, false);
+      }
+      if (retry === "after-tool") emit(session, "session.tool.input.started",
+        { assistantMessageID, id: "retry_tool", name: "shell" });
+      if (retry !== "unmarked") emit(session, "session.retry.scheduled", {
+        assistantMessageID, attempt: retry === "invalid-attempt" ? 1 : 2,
+        at: Date.now(), error: { message: "controlled provider retry" } });
+      if (retry !== "missing-restart") emit(session, "session.step.started", { assistantMessageID,
+        ...(retry === "different-message" ? { assistantMessageID: "msg_different" } : {}),
+        agent: "build", model: message.model, started: Date.now() });
+      if (retry === "scheduled-twice") {
+        emit(session, "session.retry.scheduled", { assistantMessageID, attempt: 3,
+          at: Date.now(), error: { message: "second controlled retry" } });
+        emit(session, "session.step.started", { assistantMessageID,
+          agent: "build", model: message.model, started: Date.now() });
+      }
+    }
+    if (process.env.MUHA_V2_REASONING === "on") {
+      emit(session, "session.reasoning.delta", { assistantMessageID, ordinal: 0,
+        delta: "Thinking." }, false);
+    }
+    emit(session, "session.text.started", { assistantMessageID, ordinal: 0 });
+    emit(session, "session.text.delta", { assistantMessageID, ordinal: 0, delta: output }, false);
+    emit(session, "session.text.ended", { assistantMessageID, ordinal: 0, text: output });
+    if (process.env.MUHA_V2_CHILD === "active" && index === 0) runChildTurn(session);
+    if (process.env.MUHA_V2_TOOL) {
+      const count = process.env.MUHA_V2_TOOL === "multi" ? 2 : 1;
+      for (let toolIndex = 0; toolIndex < count; toolIndex++) {
+        const id = "call_" + toolIndex;
+        const name = toolIndex === 0 ? "read" : "shell";
+        emit(session, "session.tool.input.started", { assistantMessageID, id, name });
+        emit(session, "session.tool.input.ended", { assistantMessageID, id,
+          text: JSON.stringify({ path: "file-" + toolIndex }) });
+        emit(session, "session.tool.called", { assistantMessageID, id,
+          input: { path: "file-" + toolIndex }, executed: true });
+        emit(session, "session.tool.progress", { assistantMessageID, id,
+          metadata: { phase: "reading" } }, false);
+        if (process.env.MUHA_V2_TOOL === "failure") {
+          emit(session, "session.tool.failed", { assistantMessageID, id,
+            error: { name: "ToolError", message: "controlled failure" }, executed: true });
+        } else {
+          emit(session, "session.tool.success", { assistantMessageID, id,
+            content: [{ type: "text", text: "done-" + toolIndex }], executed: true });
+        }
+        if (process.env.MUHA_V2_TOOL === "duplicate") {
+          emit(session, "session.tool.success", { assistantMessageID, id,
+            content: [{ type: "text", text: "done-" + toolIndex }], executed: true });
+        }
+      }
+    }
+    if (process.env.MUHA_V2_PERMISSION === "ask") {
+      const requestID = "per_" + nextMessage++;
+      const waiting = new Promise((resolve) => pendingPermissions.set(requestID, { session, resolve }));
+      emit(session, "permission.asked", { id: requestID, action: "read", resources: ["file-0"],
+        ...(process.env.MUHA_V2_TOOL ? { source: { type: "tool", messageID: assistantMessageID, id: "call_0" } } : {}) }, false);
+      await waiting;
+      if (session.interrupted) return;
+    }
+    if (process.env.MUHA_V2_FORM) {
+      const formID = "form_" + nextMessage++;
+      const fields = process.env.MUHA_V2_FORM === "empty"
+        ? [{ key: "", type: "string", custom: true, default: "v-a",
+          options: [{ value: "v-a", label: "" }] },
+          { key: "visit", type: "external", url: "" }]
+        : process.env.MUHA_V2_FORM === "text_constraints"
+          ? [{ key: "email", type: "string", required: true, format: "email" },
+            { key: "link", type: "string", required: true, format: "uri" },
+            { key: "timestamp", type: "string", required: true, format: "date-time" },
+            { key: "code", type: "string", required: true, pattern: "^A[0-9]{2}$",
+              minLength: 3, maxLength: 3, placeholder: "A00" },
+            { key: "flag", type: "boolean", default: false },
+            { key: "after", type: "string", when: [{ key: "flag", op: "neq", value: true }] }]
+        : process.env.MUHA_V2_FORM === "native_reply_hidden"
+          ? [{ key: "secret", type: "string", hidden: true, required: true,
+            default: "token-private" },
+            { key: "visible", type: "string", required: true,
+              when: [{ key: "secret", op: "eq", value: "token-private" }] }]
+        : process.env.MUHA_V2_FORM === "full"
+        ? [{ key: "choice", type: "string", title: "Choose", required: true, default: "v-b",
+          options: [{ value: "v-a", label: "Same" }, { value: "v-b", label: "Same" }] },
+          { key: "count", type: "integer", title: "Count", required: true, default: 3,
+            minimum: 1, maximum: 9, when: [{ key: "choice", op: "eq", value: "v-b" }] },
+          { key: "toggle", type: "boolean", title: "Enable tags", default: false },
+          { key: "secret", type: "string", title: "Secret", hidden: true, required: true,
+            default: "token-private" },
+          { key: "tags", type: "multiselect", title: "Tags", required: true,
+            options: [{ value: "tag-x", label: "X" }, { value: "tag-y", label: "Y" }],
+            custom: true, minItems: 2, maxItems: 4, when: [{ key: "toggle", op: "eq", value: true }] },
+          { key: "date", type: "string", title: "Date", format: "date", minLength: 10,
+            maxLength: 10, when: [{ key: "count", op: "eq", value: 3 },
+              { key: "secret", op: "eq", value: "token-private" }] },
+          { key: "amount", type: "number", title: "Amount", required: true,
+            minimum: 1, maximum: 5, default: 1.5 },
+          { key: "visit", type: "external", title: "Visit", url: "https://example.invalid/confirm" }]
+        : process.env.MUHA_V2_FORM === "unsupported"
+          ? [{ key: "count", type: "future", title: "Count", required: true }]
+          : [{ key: "choice", type: "string", title: "Choose", required: true,
+            ...(process.env.MUHA_V2_FORM === "constraint" ? { minLength: "invalid" } : {}),
+            options: [{ value: "v-a", label: "Alpha" }, { value: "v-b", label: "Beta" }] },
+            { key: process.env.MUHA_V2_FORM === "duplicate" ? "choice" : "tags",
+              type: "multiselect", title: "Tags", required: false,
+              options: [{ value: "tag-x", label: "X" }, { value: "tag-y", label: "Y" }], custom: true }];
+      const waiting = new Promise((resolve) => pendingForms.set(formID, { session, resolve }));
+      emit(session, "form.created", { form: { id: formID, sessionID: session.id,
+        title: "Controlled form", fields,
+        ...(process.env.MUHA_V2_FORM === "metadata" ? { metadata: { message: 42 } } : {}),
+        ...(process.env.MUHA_V2_FORM === "full" ? { metadata: { message: "Complete the form",
+          ...(process.env.MUHA_V2_TOOL ? { kind: "question",
+            tool: { messageID: assistantMessageID, id: "call_0" } } : {}) } } : {}) } }, false);
+      if (process.env.MUHA_V2_FORM === "native_reply" ||
+          process.env.MUHA_V2_FORM === "native_reply_hidden") setTimeout(() => {
+        const native = pendingForms.get(formID);
+        if (!native) return;
+        emit(session, "form.replied", { id: formID,
+          answer: process.env.MUHA_V2_FORM === "native_reply_hidden"
+            ? { secret: "token-private", visible: "yes" }
+            : { choice: "v-a", tags: ["tag-y"] } }, false);
+        pendingForms.delete(formID);
+        native.resolve();
+      }, 30);
+      await waiting;
+      if (session.interrupted) return;
+    }
+    session.messages.push(message);
+    emit(session, "session.step.ended", {
+      assistantMessageID,
+      finish: index === outputs.length - 1 ? "stop" : "tool-calls",
+      cost: 0,
+      ...(process.env.MUHA_V2_USAGE === "missing" ? {} : { tokens: message.tokens }),
+    });
+  }
+  emit(session, "session.execution.succeeded", {});
+}
+
+function runChildTurn(parent) {
+  const id = "ses_v2_" + nextSession++;
+  const child = { id, projectID: parent.projectID, location: parent.location,
+    parentID: parent.id, time: { created: Date.now(), updated: Date.now() },
+    seq: 0, messages: [] };
+  sessions.set(id, child);
+  emit(child, "session.created", { sessionID: id, parentID: parent.id,
+    projectID: child.projectID, location: child.location, slug: id });
+  emit(child, "session.execution.started", {});
+  const assistantMessageID = "msg_assistant_" + nextMessage++;
+  const message = { id: assistantMessageID,
+    time: { created: Date.now(), completed: Date.now() }, type: "assistant",
+    agent: "build", model: { providerID: "opencode-go", id: "deepseek-v4.1-flash" },
+    content: [{ type: "text", text: "Child output" }],
+    tokens: { input: 2, output: 3, reasoning: 0, cache: { read: 0, write: 0 } } };
+  emit(child, "session.step.started", { assistantMessageID, agent: "build",
+    model: message.model, started: Date.now() });
+  emit(child, "session.text.started", { assistantMessageID, ordinal: 0 });
+  emit(child, "session.text.delta", { assistantMessageID, ordinal: 0, delta: "Child output" }, false);
+  emit(child, "session.text.ended", { assistantMessageID, ordinal: 0, text: "Child output" });
+  emit(child, "session.tool.input.started", { assistantMessageID, id: "call_0", name: "child_read" });
+  emit(child, "session.tool.input.ended", { assistantMessageID, id: "call_0", text: "{}" });
+  emit(child, "session.tool.called", { assistantMessageID, id: "call_0", input: {}, executed: true });
+  emit(child, "session.tool.success", { assistantMessageID, id: "call_0",
+    content: [{ type: "text", text: "child done" }], executed: true });
+  child.messages.push(message);
+  emit(child, "session.step.ended", { assistantMessageID, finish: "stop", cost: 0, tokens: message.tokens });
+  emit(child, "session.execution.succeeded", {});
+}

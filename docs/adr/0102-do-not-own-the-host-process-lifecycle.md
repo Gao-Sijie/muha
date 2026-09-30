@@ -1,0 +1,3 @@
+# Do Not Own the Host Process Lifecycle
+
+Muha is an embedded SDK and never installs global `SIGINT`, `SIGTERM`, `beforeExit`, uncaught-exception, or unhandled-rejection handlers, and never calls `process.exit()`. The caller integrates `await runtime.close()` into its own graceful-shutdown policy; Runtime then terminates managed Harness children and releases resources within its established shutdown bounds. If the host receives `SIGKILL`, crashes, or otherwise cannot execute that flow, V0.1 guarantees only that a later Runtime can recover and validate SQLite. It does not guarantee immediate orphan-process cleanup and does not add a Linux-native parent-death supervisor solely for that case.

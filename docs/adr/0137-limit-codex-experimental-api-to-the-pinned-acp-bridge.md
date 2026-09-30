@@ -1,0 +1,11 @@
+# Limit Codex experimental API opt-in to the pinned ACP bridge
+
+Status: accepted by the user on 2026-09-20; narrowly amends ADR-0090's stable-only boundary for the combined ACP route, not the native route. Route qualification remains required.
+
+The verified ACP-maintained third-party `@agentclientprotocol/codex-acp@1.12.0` (upstream revision `a7afd2ae077d625710194d9701b83595494449de`) unconditionally opts its Codex app-server connection into `experimentalApi`. Permit that opt-in only for this pinned bridge route so Muha can qualify its behavior-preserving ACP integration; the native alternate path retains stable-only initialization. This is a connection-wide experimental surface, not a per-method allowlist or a change of model, collaboration mode, approval policy, or user configuration. A different bridge version requires renewed verification before admission.
+
+Muha does not install, download, or replace Codex or the bridge at runtime, and missing or incompatible prerequisites fail explicitly without cross-route replay. The exception neither qualifies a route nor reduces the complete Profile, original native Session continuity, or immutable-candidate acceptance requirements. Do not switch to Plan mode merely to force a Question; distinguish native applicability, NOT_TRIGGERED, and observed success. MCP elicitation remains separate from a Question.
+
+The verified distribution is the npm package's `dist/index.js` (SHA256 `f45a64dc3a994556ebdb688dc8d59b86945a9b2f940a3e3e545739dd265a7cc5`). Resolve the existing `codex-acp` executable from the supplied PATH, verify its package identity, version, entry and bytes before execution, then use Muha's current Node executable and the already-installed Codex. Unverified wrappers or compiled distributions are not covered by this qualification. The repository-private controlled launch seam is not a public prerequisite bypass.
+
+Evidence: [fixed bridge initialization](https://github.com/agentclientprotocol/codex-acp/blob/a7afd2ae077d625710194d9701b83595494449de/src/CodexAcpClient.ts), [official experimental opt-in contract](https://learn.chatgpt.com/docs/app-server#experimental-api-opt-in), and [local protocol investigation (historical private reference)](../testing/private-history.md).

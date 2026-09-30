@@ -1,0 +1,3 @@
+# Exclude Native Process Output from Startup Errors
+
+Official Adapters continuously drain and discard native startup stdout and stderr that is not part of their protocol or ready signal, and never persist or expose that process output. When a Harness cannot initialize, its typed `HARNESS_ERROR` with `operation: "initialize"` identifies the Harness Kind, fixed command name, and startup phase and reports only the applicable spawn failure, exit code, signal, or timeout state in its developer-facing message; it carries no stdout, stderr, ready banner, raw exception, or native log excerpt. Callers run the fixed native command directly when they need vendor diagnostics.

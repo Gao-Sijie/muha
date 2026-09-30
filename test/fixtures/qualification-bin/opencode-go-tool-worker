@@ -1,0 +1,68 @@
+#!/usr/bin/env node
+
+import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
+
+const model = process.argv[2];
+const sequence = (process.env.MUHA_FAKE_QUALIFICATION_SEQUENCE ?? "pass").split(",");
+const stateFile = process.env.MUHA_FAKE_QUALIFICATION_STATE_FILE;
+const pidFile = process.env.MUHA_FAKE_QUALIFICATION_PID_FILE;
+if (pidFile !== undefined) appendFileSync(pidFile, `${process.pid}\n`);
+let attempt = 0;
+if (stateFile !== undefined) {
+  try {
+    attempt = Number(readFileSync(stateFile, "utf8"));
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  writeFileSync(stateFile, String(attempt + 1));
+}
+const byModel = JSON.parse(process.env.MUHA_FAKE_QUALIFICATION_BY_MODEL ?? "{}");
+const outcome = byModel[model] ?? sequence[Math.min(attempt, sequence.length - 1)];
+if (outcome === "hang") {
+  setInterval(() => undefined, 1_000);
+} else {
+const metrics = {
+  assistantMessages: 3,
+  toolStarts: 4,
+  toolCompletions: 4,
+  approvalRequests: 1,
+  questions: 0,
+  toolErrors: 1,
+  taskTestsPassed: false,
+  nativeCallIdReused: null,
+  toolConcurrency: false,
+};
+const result = outcome === "retryable"
+  ? {
+      classification: "INCONCLUSIVE",
+      category: "harness_error",
+      durationMs: 8,
+      metrics,
+      failure: { code: "HARNESS_ERROR", operation: "startTurn", retryable: true },
+    }
+  : outcome === "fail"
+    ? { classification: "FAIL", category: "adapter_protocol_error", durationMs: 6, metrics }
+    : outcome === "nonretryable"
+      ? {
+          classification: "INCONCLUSIVE",
+          category: "harness_error",
+          durationMs: 7,
+          metrics,
+          failure: { code: "HARNESS_ERROR", operation: "startTurn", retryable: false },
+        }
+    : outcome === "inconclusive"
+      ? {
+          classification: "INCONCLUSIVE",
+          category: "insufficient_tool_activity",
+          durationMs: 4,
+          metrics,
+        }
+      : {
+  classification: "PASS",
+  durationMs: 12,
+  metrics,
+  prompt: `sensitive prompt for ${model}`,
+  nativeToolCallId: "sensitive-native-id",
+      };
+process.stdout.write(`${JSON.stringify(result)}\n`);
+}

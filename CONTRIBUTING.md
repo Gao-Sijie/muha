@@ -1,24 +1,17 @@
-# Contributing to Muha
+# Contributing
 
-Thanks for helping improve Muha.
+Use [Gao-Sijie/muha Issues](https://github.com/Gao-Sijie/muha/issues) for SDK work.
+Read [CONTEXT.md](CONTEXT.md) and [relevant ADRs](docs/adr/README.md) before changing
+behavior; the public API, static Profiles and native behavior are contractual.
 
-## Development setup
+Follow the [development commands](README.md#develop). Use controlled fixtures at
+Harness/provider process boundaries; verify public Runtime/Session/Turn behavior
+and isolated package installation, rather than adding a public testing interface.
+Run the affected test first and full `npm run check` before handoff. Preserve
+resource/permission, ESM, declarations, ordinary dependency and cleanup guarantees.
 
-Muha requires Node.js `>=22.20.0` on Linux x64 glibc (WSL2 is supported).
-
-```bash
-npm install
-npm run check
-```
-
-The public repository contains the embeddable SDK only: Core plus the official Codex, OpenCode, and Kimi Code adapters. Please keep changes within that product boundary unless an issue explicitly proposes a public API expansion.
-
-## Pull requests
-
-- Keep public APIs small and typed.
-- Preserve native Harness semantics rather than inventing cross-Harness equivalence.
-- Add or update public contract tests for packaging or API-surface changes.
-- Run `npm run check` and `npm run pack:dry-run` before opening a PR.
-- Do not commit credentials, native Harness transcripts, prompts, tool payloads, or diagnostic databases.
-
-For bugs, include the Muha package version, Node.js version, OS/runtime, Harness name and native Harness version when available. Do not include secrets or full Diagnostic Event Store contents.
+The [migration decision](docs/adr/0141-separate-sdk-development-source-from-private-orchestration.md)
+governs repository boundaries. All packages remain at `0.1.13` and `private:true`
+until a separately approved npm release. Do not add Orchestrator workspaces or
+copy private diagnostics into this SDK. Real models require explicit approval;
+unchanged source can retain [qualified evidence and limitations](docs/testing/sdk-qualification.md).

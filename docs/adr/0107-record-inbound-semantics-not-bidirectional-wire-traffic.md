@@ -1,0 +1,3 @@
+# Record Inbound Semantics, Not Bidirectional Wire Traffic
+
+A Native Event Record captures every complete decoded, semantically meaningful inbound Harness protocol message that Muha receives, including notifications, SSE/WebSocket events, and command responses that influence state. It does not capture Muha's outbound commands, HTTP headers, Bearer or Basic credentials, transport framing, ping/heartbeat traffic, ready banners, or ordinary child stdout/stderr. Core Event Records persist only Core-originated state transitions and never copy transport secrets. Therefore “complete and unredacted” applies to inbound semantic native payloads, while the Diagnostic Event Store remains an event-provenance database rather than a bidirectional packet capture.

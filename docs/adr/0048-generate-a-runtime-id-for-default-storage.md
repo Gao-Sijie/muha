@@ -1,0 +1,3 @@
+# Generate a Runtime ID for default storage
+
+Core generates an immutable UUID Runtime ID for every Runtime creation attempt and exposes the ID and canonical effective data directory as read-only diagnostics. When `RuntimeConfig.dataDir` is omitted, Core creates and uses `<os.homedir()>/.muha/<runtimeId>`; when an absolute `dataDir` is supplied, Core uses that directory without appending the ID, resolving symbolic links after directory preparation as required by ADR-0103, while Native Event Records retain the ID in either case. Callers cannot choose a Runtime ID, fixed storage is expressed only through `dataDir`, the ID is not resumable identity and never enters a Session Reference, and V0.1 does not automatically remove historical generated directories.

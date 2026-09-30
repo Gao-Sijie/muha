@@ -9,7 +9,6 @@ import {
   createSkillsCliPlanner,
 } from "@muha-sdk/core/internal";
 import { KimiProcess } from "./kimi-process.js";
-import { planKimiMcpServer } from "./workspace-configurator.js";
 
 const capabilities = Object.freeze({
   sessionListing: true,
@@ -32,6 +31,7 @@ const capabilities = Object.freeze({
   toolEvents: true,
   turnUsage: true,
 } as const satisfies HarnessCapabilities);
+import { planKimiMcpServer } from "./workspace-configurator.js";
 
 export type { OfficialAdapterOptions } from "@muha-sdk/core";
 

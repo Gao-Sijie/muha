@@ -1,0 +1,7 @@
+# Keep this ACP-first optimization in muha-internal
+
+Status: accepted on 2026-09-16 and amended by the user's same-day clarification to limit acceptance to this project; supersedes [ADR-0131](0131-separate-public-sdk-and-private-orchestrator-deliveries.md) for the current work.
+
+This optimization remains entirely in `muha-internal`, preserving the six SDK packages plus Orchestrator as an internal, lockstep local artifact delivery while completing the behavior-preserving ACP-first work. It includes no work on `Gao-Sijie/muha`, no export or repository cutover, and no npm Registry publication, separating the integration work from a future distribution project whose scope must be established independently. Acceptance is limited to this project's SDK contracts, real-Harness qualification, Orchestrator, and local artifacts with explicit per-Harness models; novim, report-visualization, and other consumer applications are not implementation tasks or acceptance dependencies.
+
+The [development plan (historical private reference)](../testing/private-history.md) retains all five route qualification gates, the Pi SDK exception, deterministic Session resumption, and static Capability Profiles; it replaces public-cutover completion with project-only internal acceptance. Kimi's expired subscription is recorded as a current real-qualification blocker in that plan, not as a capability failure or a waiver; independent work can proceed without claiming complete five-Harness qualification.

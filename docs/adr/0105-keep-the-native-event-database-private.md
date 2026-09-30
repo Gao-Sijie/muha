@@ -1,0 +1,3 @@
+# Keep the Diagnostic Event Database Private
+
+Exposing Runtime `dataDir` supports capacity monitoring, post-close archival, and explicit directory lifecycle management; it does not expose the SQLite schema as an API. Tables, columns, indexes, migrations, and encodings are private Core implementation details with no compatibility promise. Callers must not read or write the database while a Runtime owns it, and post-close direct inspection remains unsupported diagnostics rather than a programmatic contract. Any future supported consumption of Diagnostic Event Records requires an explicit versioned query or export API; Muha will not retroactively treat direct SQL access as public compatibility surface.

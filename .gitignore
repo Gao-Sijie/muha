@@ -1,4 +1,14 @@
+# Agent-local state
+/.agents/
+/.codex/
+
+# Dependencies and generated output
 node_modules/
 dist/
-.cache/
 *.tsbuildinfo
+.cache/
+
+# Local scratch output
+/.scratch/
+
+*/.backup/

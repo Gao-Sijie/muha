@@ -1,0 +1,5 @@
+# Admit Harnesses by Muha contract conformance
+
+Status: accepted on 2026-09-28; supersedes [ADR-0130](0130-adopt-behavior-preserving-acp-first-routes.md) for first-version qualification. The internal-only repository scope of [ADR-0132](0132-keep-acp-first-optimization-in-muha-internal.md) remains, but its ACP preference and artifact-delivery gate do not define this phase.
+
+The first Muha functional version is qualified only when Codex CLI, OpenCode, Kimi Code, AGY, and Pi each pass real-model verification against the non-optional Core Kernel and their complete declared Harness Capability Profiles on the same fixed source candidate. Muha chooses the route that preserves those behaviors; ACP, CLI, native serve, and SDK have no preference or quota. This replaces protocol-first admission because the available Harness interfaces differ in the Muha behaviors they can preserve. A model being listed, an offline test passing, or one Harness passing cannot substitute for another Harness's real qualification. `npm ci`, consumer validation, public repository migration, and npm publication are separate later decisions, not part of this functional-version gate.

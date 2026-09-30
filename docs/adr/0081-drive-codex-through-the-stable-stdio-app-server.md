@@ -1,0 +1,3 @@
+# Drive Codex Through the Stable stdio App Server
+
+The Codex Adapter starts the fixed PATH command `codex app-server --stdio`, communicates over the app-server's bidirectional JSONL stdio protocol, and becomes ready only after one successful `initialize` request followed by `initialized`. It uses only stable methods and fields without opting into `experimentalApi`, treats stdout exclusively as protocol, drains and discards stderr, and applies Muha's bounded process-tree shutdown. It does not depend on `@openai/codex-sdk`, use the experimental/unsupported WebSocket transport, or attempt to impose Kimi or OpenCode transport choices on Codex.

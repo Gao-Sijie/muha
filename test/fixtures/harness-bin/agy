@@ -1,0 +1,175 @@
+#!/usr/bin/env node
+import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { createInterface } from "node:readline";
+import { DatabaseSync } from "node:sqlite";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { nativeStringField } from "../agy-native-metadata.mjs";
+
+const args = process.argv.slice(2);
+const value = flag => args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined;
+if (value("--model") === "invalid-model" ||
+  (value("--effort") !== undefined && (!["low", "medium", "high"].includes(value("--effort")) || value("--model") === "fake-opus"))) {
+  process.stdout.write(JSON.stringify({ event: "result", result: { conversation_id: "", status: "ERROR", response: "",
+    error: "invalid model selection", duration_seconds: 0, num_turns: 0 } }) + "\n");
+  process.exitCode = 1;
+  await new Promise(resolve => process.stdout.write("", resolve));
+  process.exit();
+}
+const id = value("--conversation") ?? randomUUID();
+const projectId = value("--project") ?? randomUUID();
+const conversations = join(process.env.HOME, ".gemini/antigravity-cli/conversations");
+const projects = join(process.env.HOME, ".gemini/config/projects");
+await mkdir(conversations, { recursive: true });
+await mkdir(projects, { recursive: true });
+let workspace = value("--add-dir");
+if (!workspace) workspace = fileURLToPath(JSON.parse(await readFile(join(projects, `${projectId}.json`), "utf8")).projectResources.resources[0].folderUri);
+const uri = pathToFileURL(workspace).href;
+await writeFile(join(workspace, `${id}.pid`), String(process.pid));
+if (args.includes("--new-project")) {
+  const folderUri = process.env.MUHA_FAKE_AGY_SCENARIO === "wrong-create-project" && !workspace.includes("muha-agy-ready-") ? "file:///tmp" : uri;
+  await writeFile(join(projects, `${projectId}.json`), JSON.stringify({ id: projectId, projectResources: { resources: [{ folderUri }] } }));
+  const db = new DatabaseSync(join(conversations, `${id}.db`));
+  db.exec("CREATE TABLE trajectory_meta (trajectory_id TEXT, cascade_id TEXT); CREATE TABLE trajectory_metadata_blob (id TEXT, data BLOB)");
+  db.prepare("INSERT INTO trajectory_meta VALUES (?, ?)").run(randomUUID(), id);
+  // Literal native schema field tags: repeated workspace_uris=7, project_id=18.
+  const bytes = Buffer.concat([nativeStringField([0x3a], uri), nativeStringField([0x92, 0x01], projectId)]);
+  db.prepare("INSERT INTO trajectory_metadata_blob VALUES ('main', ?)").run(bytes);
+  db.close();
+}
+let turnCount = 0;
+const emit = event => {
+  if (event.event === "result" && event.result.num_turns === undefined) event.result.num_turns = turnCount;
+  process.stdout.write(`${JSON.stringify(event)}\n`);
+};
+const step = (step_index, step_type, state, extra = {}) => emit({ event: "step_update",
+  step_update: { conversation_id: id, step_index, step_type, state, ...extra } });
+emit({ event: "init", conversation_id: id, init: { cwd: workspace, model: value("--model") ?? "fake-opus",
+  permission_mode: args.includes("--dangerously-skip-permissions") ? "always-proceed" : "request-review" } });
+let index = 0;
+let previousTurnFrames = [];
+let previous = await readFile(join(conversations, `${id}.history`), "utf8").catch(() => "");
+for await (const line of createInterface({ input: process.stdin })) {
+  const input = JSON.parse(line);
+  const text = input.message.content.map(part => part.text).join("");
+  turnCount++;
+  if (process.env.MUHA_FAKE_AGY_SCENARIO === "timeout-before-next-input" && turnCount === 2) {
+    process.stderr.write("[agy] print timeout after 1h0m0s with turn in progress; returning partial output\n");
+    emit({ event: "result", result: { conversation_id: id, status: "SUCCESS", response: "", num_turns: 1 } });
+    continue;
+  }
+  if (process.env.MUHA_FAKE_AGY_SCENARIO === "late-turn-events") {
+    for (const event of previousTurnFrames) emit(event);
+    const user = { event: "step_update", step_update: { conversation_id: id, step_index: index++, step_type: "user_input", state: "DONE" } };
+    const answer = { event: "step_update", step_update: { conversation_id: id, step_index: index++, step_type: "agent_response", state: "DONE", text_delta: text } };
+    const result = { event: "result", result: { conversation_id: id, status: "SUCCESS", response: text, num_turns: turnCount } };
+    previousTurnFrames = [user, answer, result];
+    for (const event of previousTurnFrames) emit(event);
+    continue;
+  }
+  if (process.env.MUHA_FAKE_AGY_EVIDENCE) await writeFile(process.env.MUHA_FAKE_AGY_EVIDENCE, JSON.stringify({ model: value("--model"), effort: value("--effort"), printTimeout: value("--print-timeout"), input: text }));
+  step(index++, "user_input", "DONE");
+  if (process.env.MUHA_FAKE_AGY_SCENARIO === "native-error-exit") {
+    step(index++, "agent_response", "DONE", { text_delta: "partial output" });
+    emit({ event: "result", result: { conversation_id: id, status: "ERROR", response: "partial output", error: "native request failed: EOF" } });
+    await new Promise(resolve => process.stdout.write("", resolve));
+    process.exit(1);
+  }
+  if (process.env.MUHA_FAKE_AGY_SCENARIO === "json-log") {
+    emit({ level: "info", message: "native process log, not a semantic event" });
+    continue;
+  }
+  if (process.env.MUHA_FAKE_AGY_SCENARIO === "repeated-init") {
+    emit({ event: "init", conversation_id: randomUUID(), init: { cwd: workspace } });
+    continue;
+  }
+  if (process.env.MUHA_FAKE_AGY_SCENARIO === "ambiguous-denials") {
+    step(index++, "agent_response", "DONE");
+    step(index, "tool", "ACTIVE", { tool_name: "run_command", tool_info: { name: "run_command", parameters: { CommandLine: "first" } } });
+    step(index++, "tool", "ERROR", { tool_name: "run_command", tool_info: { name: "run_command", error: { type: "TOOL_ERROR", message: "native permission failure" } } });
+    step(index, "tool", "ACTIVE", { tool_name: "run_command", tool_info: { name: "run_command", parameters: { CommandLine: "second" } } });
+    step(index++, "tool", "DONE", { tool_name: "run_command", tool_info: { name: "run_command" } });
+    emit({ event: "result", result: { conversation_id: id, status: "SUCCESS", response: "", denied_actions: [{ action: "command", display_name: "RunCommand" }] } });
+    continue;
+  }
+  if (process.env.MUHA_FAKE_AGY_SCENARIO === "malformed-output") {
+    process.stdout.write("{broken native json\n");
+    continue;
+  }
+  if (process.env.MUHA_FAKE_AGY_SCENARIO === "oversized-output") {
+    process.stdout.write("x".repeat(9 * 1024 * 1024));
+    continue;
+  }
+  if (["unfinished-message", "missing-message"].includes(process.env.MUHA_FAKE_AGY_SCENARIO)) {
+    const heartbeat = join(workspace, "unfinished-heartbeat.txt");
+    await writeFile(heartbeat, String(Date.now()));
+    setInterval(() => { void writeFile(heartbeat, String(Date.now())); }, 10);
+    if (process.env.MUHA_FAKE_AGY_SCENARIO === "unfinished-message") {
+      step(index++, "agent_response", "DONE", { text_delta: "Progress" });
+      step(index++, "agent_response", "ACTIVE", { text_delta: "Unfinished final answer" });
+    }
+    emit({ event: "result", result: { conversation_id: id, status: "SUCCESS", response: "ProgressUnfinished final answer" } });
+    continue;
+  }
+  if (process.env.MUHA_FAKE_AGY_SCENARIO === "partial-timeout") {
+    step(index++, "agent_response", "DONE", { text_delta: "Progress only" });
+    process.stderr.write("[agy] print timeout after 1h0m0s with turn in progress; returning partial output\n");
+    emit({ event: "result", result: { conversation_id: id, status: "SUCCESS", response: "Progress only" } });
+    continue;
+  }
+  if (process.env.MUHA_FAKE_AGY_SCENARIO === "rich") {
+    step(index, "agent_response", "ACTIVE", { text_delta: "Working." });
+    step(index++, "agent_response", "DONE", { usage: { input_tokens: 20, output_tokens: 4 } });
+    step(index, "tool", "ACTIVE", { tool_name: "view_file", tool_info: { name: "view_file", parameters: { AbsolutePath: "/fixture/input.txt" } } });
+    step(index++, "tool", "DONE", { tool_name: "view_file", tool_info: { name: "view_file", output: "read contents" } });
+    step(index++, "agent_response", "DONE", { text_delta: "Done.", usage: { input_tokens: 10, output_tokens: 3 } });
+    emit({ event: "result", result: { conversation_id: id, status: "SUCCESS", response: "Working.Done." } });
+    continue;
+  }
+  if (process.env.MUHA_FAKE_AGY_SCENARIO === "tools") {
+    step(index++, "agent_response", "DONE");
+    step(index, "tool", "ACTIVE", { tool_name: "view_file", tool_info: { name: "view_file", parameters: { AbsolutePath: "/fixture/input.txt" } } });
+    step(index++, "tool", "DONE", { tool_name: "view_file", tool_info: { name: "view_file", parameters: { AbsolutePath: "/fixture/input.txt" }, output: "native file contents" } });
+    step(index, "tool", "ACTIVE", { tool_name: "run_command", tool_info: { name: "run_command", parameters: { CommandLine: "printf denied" } } });
+    step(index++, "tool", "DONE", { tool_name: "run_command", tool_info: { name: "run_command", parameters: { CommandLine: "printf denied" } } });
+    emit({ event: "result", result: { conversation_id: id, status: "SUCCESS", response: "",
+      denied_actions: [{ action: "command", display_name: "RunCommand" }] } });
+    continue;
+  }
+  if (process.env.MUHA_FAKE_AGY_SCENARIO === "usage") {
+    step(index, "agent_response", "ACTIVE", { text_delta: "progress", usage: { input_tokens: 90, output_tokens: 8 } });
+    step(index, "agent_response", "DONE", { usage: { input_tokens: 100, output_tokens: 10, cache_read_tokens: 300, thinking_tokens: 2 } });
+    step(index++, "agent_response", "DONE", { usage: { input_tokens: 100, output_tokens: 10, cache_read_tokens: 300, thinking_tokens: 2 } });
+    step(index, "agent_response", "ACTIVE", { text_delta: "final", usage: { input_tokens: 8, output_tokens: 1 } });
+    step(index++, "agent_response", "DONE", { usage: { input_tokens: 5, output_tokens: 2 } });
+    emit({ event: "result", result: { conversation_id: id, status: "SUCCESS", response: "progressfinal",
+      usage: { input_tokens: 90000, output_tokens: 50000, cache_read_tokens: 70000, thinking_tokens: 9000 } } });
+    continue;
+  }
+  if (process.env.MUHA_FAKE_AGY_SCENARIO === "messages") {
+    step(index, "agent_response", "ACTIVE", { text_delta: "ha" });
+    step(index, "agent_response", "ACTIVE", { text_delta: "ha" });
+    step(index, "agent_response", "DONE", { text_delta: "!" });
+    step(index++, "agent_response", "DONE", { text_delta: "!" });
+    step(index++, "agent_response", "DONE", { text_delta: "final" });
+    emit({ event: "result", result: { conversation_id: id, status: "SUCCESS", response: "haha!final" } });
+    continue;
+  }
+  const response = text === "Read workspace." ? await readFile(join(workspace, "source.txt"), "utf8")
+    : text === "Recall my previous input." ? previous : "Hello from AGY.";
+  previous = text;
+  await writeFile(join(conversations, `${id}.history`), previous);
+  if (text === "Wait without tools.") continue;
+  if (text === "Keep working until interrupted.") {
+    const worker = spawn(process.execPath, ["--input-type=module", "-e",
+      "import {appendFileSync} from 'node:fs'; const t=setInterval(()=>appendFileSync(process.argv[1],'.'),10); setTimeout(()=>{clearInterval(t)},30000);",
+      join(workspace, "heartbeat.txt")], { detached: true, stdio: "ignore" });
+    worker.unref();
+    continue;
+  }
+  step(index, "agent_response", "ACTIVE", { text_delta: response.slice(0, 4) });
+  step(index++, "agent_response", "DONE", { text_delta: response.slice(4) });
+  emit({ event: "result", result: { conversation_id: id, status: "SUCCESS", response } });
+}

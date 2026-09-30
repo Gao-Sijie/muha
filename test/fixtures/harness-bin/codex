@@ -1,0 +1,1217 @@
+#!/usr/bin/env node
+
+import { createInterface } from "node:readline";
+import { readFile, rename, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+
+const threadTurns = new Map();
+const loadedPolicies = new Map();
+
+if (!["app-server --stdio", "app-server --stdio -c thread_unload_delay_secs=0"].includes(process.argv.slice(2).join(" "))) {
+  process.stderr.write("unexpected fake Codex arguments\n");
+  process.exitCode = 64;
+} else {
+  const lines = createInterface({ input: process.stdin });
+
+  let initialized = false;
+  let keepAlive;
+  let activeTurn;
+  let activeTurnThreadId;
+  let activeApproval;
+  let activeQuestion;
+  let activeElicitation;
+  const elicitationResponses = [];
+  let turnRequestCount = 0;
+  let interruptCount = 0;
+  let resumeClosingObserved = false;
+  for await (const line of lines) {
+    const request = JSON.parse(line);
+    if (
+      activeElicitation &&
+      request.id === activeElicitation.requests[activeElicitation.index].id &&
+      request.method === undefined &&
+      request.result !== undefined
+    ) {
+      elicitationResponses.push(request.result);
+      const resolvedId = activeElicitation.requests[activeElicitation.index].id;
+      sendNotification("serverRequest/resolved", {
+        threadId: activeElicitation.threadId,
+        requestId: resolvedId,
+      });
+      activeElicitation.index += 1;
+      if (process.env.MUHA_FAKE_ELICITATION_RESPONSE_FILE) {
+        await writeFile(
+          process.env.MUHA_FAKE_ELICITATION_RESPONSE_FILE,
+          JSON.stringify(elicitationResponses),
+        );
+      }
+      if (activeElicitation.index < activeElicitation.requests.length) {
+        sendElicitation(activeElicitation);
+      } else {
+        finishElicitationTurn(activeElicitation);
+        activeElicitation = undefined;
+      }
+      continue;
+    }
+    if (
+      activeQuestion &&
+      request.id === activeQuestion.requestId &&
+      request.method === undefined &&
+      request.result !== undefined
+    ) {
+      if (process.env.MUHA_FAKE_QUESTION_RESPONSE_FILE) {
+        await writeFile(
+          process.env.MUHA_FAKE_QUESTION_RESPONSE_FILE,
+          JSON.stringify(request.result),
+        );
+      }
+      sendNotification("serverRequest/resolved", {
+        threadId: activeQuestion.threadId,
+        requestId: activeQuestion.requestId,
+      });
+      finishQuestionTurn(activeQuestion);
+      activeQuestion = undefined;
+      continue;
+    }
+    if (
+      activeApproval &&
+      request.id === activeApproval.requestId &&
+      request.method === undefined &&
+      request.result !== undefined
+    ) {
+      const decision = request.result.decision ?? request.result;
+      if (process.env.MUHA_FAKE_APPROVAL_DECISION_FILE) {
+        await writeFile(
+          process.env.MUHA_FAKE_APPROVAL_DECISION_FILE,
+          typeof decision === "string" ? decision : JSON.stringify(decision),
+        );
+      }
+      sendNotification("serverRequest/resolved", {
+        threadId: activeApproval.threadId,
+        requestId: activeApproval.requestId,
+      });
+      finishApprovalTurn(activeApproval.threadId, activeApproval.turn, activeApproval.command);
+      activeApproval = undefined;
+      continue;
+    }
+    if (!initialized && request.method === "initialize") {
+      if (typeof request.params?.clientInfo?.version !== "string") {
+        process.stderr.write("unexpected Muha SDK version\n");
+        process.exitCode = 69;
+        break;
+      }
+      if ("experimentalApi" in (request.params ?? {})) {
+        process.stderr.write("experimental API must remain disabled\n");
+        process.exitCode = 66;
+        break;
+      }
+      if (request.params.capabilities !== null) {
+        process.stderr.write("MCP extended elicitation must remain disabled\n");
+        process.exitCode = 68;
+        break;
+      }
+      process.stdout.write(
+        `${JSON.stringify({
+          id: request.id,
+          result: { harness: "codex", fixture: true },
+        })}\n`,
+      );
+      continue;
+    }
+    if (!initialized && request.method === "initialized") {
+      initialized = true;
+      if (process.env.MUHA_FAKE_PID_FILE) {
+        await writePid(process.env.MUHA_FAKE_PID_FILE, process.pid);
+      }
+      if (
+        process.env.MUHA_FAKE_DESCENDANT_PID_FILE &&
+        process.env.MUHA_FAKE_DESCENDANT_MARKER
+      ) {
+        const descendant = spawn(
+          process.execPath,
+          [
+            "-e",
+            "setInterval(() => undefined, 1000)",
+            process.env.MUHA_FAKE_DESCENDANT_MARKER,
+          ],
+          { stdio: "ignore" },
+        );
+        descendant.unref();
+        await writePid(process.env.MUHA_FAKE_DESCENDANT_PID_FILE, descendant.pid);
+      }
+      if (process.env.MUHA_FAKE_IGNORE_EOF === "1") {
+        keepAlive = setInterval(() => undefined, 1_000);
+      }
+      continue;
+    }
+    if (!initialized) {
+      process.stderr.write("unexpected fake Codex method\n");
+      process.exitCode = 65;
+      break;
+    }
+    if (request.method === "experimentalFeature/list") {
+      if (typeof request.params?.threadId !== "string" || request.params.threadId.length === 0) {
+        process.stdout.write(`${JSON.stringify({ id: request.id, error: {
+          code: "invalid_request", message: "threadId is required for effective feature values",
+        } })}\n`);
+      } else if (process.env.MUHA_FAKE_CODEX_QUESTION_FEATURE === "unavailable") {
+        process.stdout.write(`${JSON.stringify({ id: request.id, error: {
+          code: "method_not_found", message: "feature list unavailable",
+        } })}\n`);
+      } else {
+        process.stdout.write(`${JSON.stringify({ id: request.id, result: {
+          data: [{ name: "default_mode_request_user_input",
+            enabled: process.env.MUHA_FAKE_CODEX_QUESTION_FEATURE !== "disabled" }],
+          nextCursor: null,
+        } })}\n`);
+      }
+      continue;
+    }
+    if (request.method === "thread/start") {
+      if (rejectUnexpectedSandbox(request)) continue;
+      if (process.env.MUHA_FAKE_SESSION_REQUEST_FILE) {
+        await writeFile(process.env.MUHA_FAKE_SESSION_REQUEST_FILE, JSON.stringify(request.params));
+      }
+      globalThis.__muhaLastWorkspacePath = request.params.cwd;
+      const sessions = await readNativeSessions();
+      const record = {
+        id: `thread_fake_${sessions.length + 1}`,
+        workspacePath: request.params.cwd,
+        model: request.params.model ?? "fake-default",
+      };
+      sessions.push(record);
+      loadedPolicies.set(record.id, { approvalPolicy: request.params.approvalPolicy, sandbox: request.params.sandbox });
+      const thread = threadFromRecord(record);
+      if (process.env.MUHA_FAKE_NATIVE_SESSIONS_FILE) {
+        await writeNativeSessions(sessions);
+      }
+      process.stdout.write(
+        `${JSON.stringify({
+          id: request.id,
+          result: {
+            thread,
+            model: record.model,
+            modelProvider: "fake",
+            serviceTier: null,
+            cwd: request.params.cwd,
+            instructionSources: [],
+            approvalPolicy: request.params.approvalPolicy,
+            approvalsReviewer: "user",
+            sandbox: { type: process.env.MUHA_FAKE_TURN_SCENARIO !== "wrong-permission-mode" && request.params.sandbox === "danger-full-access" ? "dangerFullAccess" : "workspaceWrite" },
+            reasoningEffort: null,
+          },
+        })}\n`,
+      );
+      process.stdout.write(`${JSON.stringify({ method: "thread/started", params: { thread } })}\n`);
+      continue;
+    }
+    if (request.method === "thread/list") {
+      const sessions = (await readNativeSessions()).filter(
+        ({ workspacePath }) => workspacePath === request.params.cwd,
+      );
+      const offset = request.params.cursor === undefined ? 0 : Number(request.params.cursor);
+      const page = sessions.slice(offset, offset + 1).map(threadFromRecord);
+      const nextOffset = offset + page.length;
+      process.stdout.write(
+        `${JSON.stringify({
+          id: request.id,
+          result: {
+            data: page,
+            nextCursor: nextOffset < sessions.length ? String(nextOffset) : null,
+            backwardsCursor: page.length > 0 ? String(offset) : null,
+          },
+        })}\n`,
+      );
+      continue;
+    }
+    if (request.method === "thread/unsubscribe") {
+      if (process.argv.includes("thread_unload_delay_secs=0")) loadedPolicies.delete(request.params.threadId);
+      process.stdout.write(`${JSON.stringify({ id: request.id, result: { status: "unsubscribed" } })}\n`);
+      sendNotification("thread/status/changed", { threadId: request.params.threadId, status: { type: "notLoaded" } });
+      continue;
+    }
+    if (request.method === "thread/resume") {
+      if ((process.env.MUHA_FAKE_CODEX_SCENARIO === "resume-closing" && !resumeClosingObserved) ||
+        process.env.MUHA_FAKE_CODEX_SCENARIO === "resume-closing-forever") {
+        resumeClosingObserved = true;
+        process.stdout.write(`${JSON.stringify({ id: request.id, error: {
+          code: -32600,
+          message: `thread ${request.params.threadId} is closing; retry thread/resume after the thread is closed`,
+        } })}\n`);
+        continue;
+      }
+      if (rejectUnexpectedSandbox(request)) continue;
+      if (process.env.MUHA_FAKE_SESSION_REQUEST_FILE) {
+        await writeFile(process.env.MUHA_FAKE_SESSION_REQUEST_FILE, JSON.stringify(request.params));
+      }
+      const sessions = await readNativeSessions();
+      const record = sessions.find(({ id }) => id === request.params.threadId);
+      if (!record) {
+        process.stdout.write(
+          `${JSON.stringify({ id: request.id, error: { code: "session_not_found", message: "not found" } })}\n`,
+        );
+        continue;
+      }
+      if (record.workspacePath !== request.params.cwd) {
+        process.stdout.write(
+          `${JSON.stringify({ id: request.id, error: { code: "workspace_mismatch", message: "mismatch" } })}\n`,
+        );
+        continue;
+      }
+      globalThis.__muhaLastWorkspacePath = record.workspacePath;
+      const thread = threadFromRecord(record);
+      const model = request.params.model ?? record.model ?? "fake-default";
+      const applied = process.env.MUHA_FAKE_TURN_SCENARIO === "approval"
+        ? loadedPolicies.get(record.id) ?? request.params : request.params;
+      loadedPolicies.set(record.id, { approvalPolicy: applied.approvalPolicy, sandbox: applied.sandbox });
+      process.stdout.write(
+        `${JSON.stringify({
+          id: request.id,
+          result: {
+            thread,
+            model,
+            modelProvider: "fake",
+            serviceTier: null,
+            cwd: record.workspacePath,
+            instructionSources: [],
+            approvalPolicy: applied.approvalPolicy,
+            approvalsReviewer: "user",
+            sandbox: { type: process.env.MUHA_FAKE_TURN_SCENARIO !== "wrong-permission-mode" && applied.sandbox === "danger-full-access" ? "dangerFullAccess" : "workspaceWrite" },
+            reasoningEffort: null,
+          },
+        })}\n`,
+      );
+      process.stdout.write(`${JSON.stringify({ method: "thread/started", params: { thread } })}\n`);
+      continue;
+    }
+    if (request.method === "thread/read") {
+      const threadId = request.params.threadId;
+      const sessions = await readNativeSessions();
+      const record = sessions.find(({ id }) => id === threadId);
+      if (!record) {
+        process.stdout.write(
+          `${JSON.stringify({ id: request.id, error: { code: "session_not_found", message: "not found" } })}\n`,
+        );
+        continue;
+      }
+      if (process.env.MUHA_FAKE_TURN_SCENARIO === "recover-thread-read-fails") {
+        process.stdout.write(
+          `${JSON.stringify({ id: request.id, error: { code: "internal_error", message: "fixture thread/read failure" } })}\n`,
+        );
+        continue;
+      }
+      const thread = threadFromRecord(record);
+      if (request.params.includeTurns === true) {
+        thread.turns = threadTurns.get(threadId) ?? [];
+      }
+      process.stdout.write(
+        `${JSON.stringify({ id: request.id, result: { thread } })}\n`,
+      );
+      continue;
+    }
+    if (request.method === "model/list") {
+      if (process.env.MUHA_FAKE_MODEL_LIST_DELAY_MS) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, Number(process.env.MUHA_FAKE_MODEL_LIST_DELAY_MS)),
+        );
+      }
+      const models = [
+        { id: "fake-default", model: "fake-default", displayName: "fake-default", hidden: false, supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "medium" }], defaultReasoningEffort: "medium" },
+        { id: "fake-high", model: "fake-high", displayName: "fake-high", hidden: false, supportedReasoningEfforts: [{ reasoningEffort: "high", description: "high" }], defaultReasoningEffort: "high" },
+        { id: "fake-minimal", model: "fake-minimal", displayName: "fake-minimal", hidden: false },
+      ];
+      const offset = request.params.cursor === undefined ? 0 : Number(request.params.cursor);
+      const entries = models.slice(offset, offset + 1);
+      process.stdout.write(
+        `${JSON.stringify({
+          id: request.id,
+          result: {
+            data: entries,
+            nextCursor: offset + entries.length < models.length ? String(offset + entries.length) : null,
+          },
+        })}\n`,
+      );
+      continue;
+    }
+    if (request.method === "turn/start") {
+      if ("reasoningEffort" in request.params) {
+        process.stdout.write(
+          `${JSON.stringify({
+            id: request.id,
+            error: { code: "invalid_params", message: "turn/start uses effort" },
+          })}\n`,
+        );
+        continue;
+      }
+      turnRequestCount += 1;
+      if (process.env.MUHA_FAKE_TURN_REQUEST_COUNT_FILE) {
+        await writeFile(process.env.MUHA_FAKE_TURN_REQUEST_COUNT_FILE, String(turnRequestCount));
+      }
+      if (process.env.MUHA_FAKE_TURN_REJECT === "1") {
+        process.stdout.write(
+          `${JSON.stringify({
+            id: request.id,
+            error: { code: "fake_rejected", message: "fixture rejected Turn" },
+          })}\n`,
+        );
+        continue;
+      }
+      if (
+        process.env.MUHA_FAKE_REJECT_IMAGE === "1" &&
+        request.params.input.some(({ type }) => type === "image" || type === "localImage")
+      ) {
+        process.stdout.write(
+          `${JSON.stringify({
+            id: request.id,
+            error: { code: "image_not_supported", message: "fixture model rejected image" },
+          })}\n`,
+        );
+        continue;
+      }
+      if (process.env.MUHA_FAKE_TURN_ACCEPT_DELAY_MS) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, Number(process.env.MUHA_FAKE_TURN_ACCEPT_DELAY_MS)),
+        );
+      }
+      if (process.env.MUHA_FAKE_TURN_ACCEPTED_FILE) {
+        await writeFile(process.env.MUHA_FAKE_TURN_ACCEPTED_FILE, "accepted");
+      }
+      if (process.env.MUHA_FAKE_TURN_REQUEST_FILE) {
+        await writeFile(process.env.MUHA_FAKE_TURN_REQUEST_FILE, JSON.stringify(request.params));
+      }
+      if (request.params.model) {
+        const sessions = await readNativeSessions();
+        const record = sessions.find(({ id }) => id === request.params.threadId);
+        if (record) {
+          record.model = request.params.model;
+          await writeNativeSessions(sessions);
+        }
+      }
+      const turn = {
+        id: "turn_native_fake_1",
+        items: [],
+        itemsView: { type: "full" },
+        status: "inProgress",
+        error: null,
+        startedAt: 1,
+        completedAt: null,
+        durationMs: null,
+      };
+      process.stdout.write(`${JSON.stringify({ id: request.id, result: { turn } })}\n`);
+      if (process.env.MUHA_FAKE_TURN_DELAY_MS) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, Number(process.env.MUHA_FAKE_TURN_DELAY_MS)),
+        );
+      }
+      if (process.env.MUHA_FAKE_TURN_SCENARIO === "rich") {
+        emitRichTurn(request.params.threadId, turn);
+        continue;
+      }
+      if (process.env.MUHA_FAKE_TURN_SCENARIO === "background-usage-before-start") {
+        sendNotification("thread/tokenUsage/updated", {
+          threadId: request.params.threadId,
+          turnId: "turn_native_previous",
+          tokenUsage: usage(7, 3, 1, 1),
+        });
+      }
+      if (process.env.MUHA_FAKE_TURN_SCENARIO === "burst-alternating") {
+        emitAlternatingBurst(request.params.threadId, turn);
+        continue;
+      }
+      if (
+        process.env.MUHA_FAKE_TURN_SCENARIO === "burst-coalescible" ||
+        process.env.MUHA_FAKE_TURN_SCENARIO === "burst-coalescible-utf8"
+      ) {
+        emitCoalescibleBurst(request.params.threadId, turn);
+        continue;
+      }
+      if (process.env.MUHA_FAKE_TURN_SCENARIO === "oversize-delta") {
+        emitOversizeDelta(request.params.threadId, turn);
+        continue;
+      }
+      if (process.env.MUHA_FAKE_TURN_SCENARIO === "mcp-elicitations") {
+        activeElicitation = beginElicitationTurn(request.params.threadId, turn);
+        continue;
+      }
+      if (process.env.MUHA_FAKE_TURN_SCENARIO?.startsWith("approval")) {
+        const approval = beginApprovalTurn(request.params.threadId, turn);
+        if (process.env.MUHA_FAKE_TURN_SCENARIO === "approval-invalidated-by-harness") {
+          sendNotification("serverRequest/resolved", {
+            threadId: request.params.threadId,
+            requestId: approval.requestId,
+          });
+          turn.status = "failed";
+          turn.error = { message: "native fixture failure after invalidation" };
+          sendNotification("turn/completed", { threadId: request.params.threadId, turn });
+        } else if (process.env.MUHA_FAKE_TURN_SCENARIO === "approval-invalidated-by-turn") {
+          turn.status = "failed";
+          turn.error = { message: "native fixture failure with pending approval" };
+          sendNotification("turn/completed", { threadId: request.params.threadId, turn });
+        } else {
+          activeApproval = approval;
+        }
+        continue;
+      }
+      if (process.env.MUHA_FAKE_TURN_SCENARIO?.startsWith("question")) {
+        activeQuestion = beginQuestionTurn(request.params.threadId, turn);
+        continue;
+      }
+      if (process.env.MUHA_FAKE_TURN_SCENARIO?.startsWith("held")) {
+        activeTurn = turn;
+        activeTurnThreadId = request.params.threadId;
+        sendNotification("turn/started", {
+          threadId: activeTurnThreadId,
+          turn: activeTurn,
+        });
+        if (process.env.MUHA_FAKE_TURN_SCENARIO === "held-exit-process") {
+          setTimeout(() => process.exit(23), 25);
+        }
+        continue;
+      }
+      if (process.env.MUHA_FAKE_TURN_SCENARIO?.startsWith("recover-")) {
+        emitRecoveryScenario(process.env.MUHA_FAKE_TURN_SCENARIO, request.params.threadId, turn);
+        continue;
+      }
+      if (
+        process.env.MUHA_FAKE_TURN_SCENARIO?.startsWith("protocol-") ||
+        process.env.MUHA_FAKE_TURN_SCENARIO?.startsWith("native-")
+      ) {
+        emitTerminalScenario(
+          process.env.MUHA_FAKE_TURN_SCENARIO,
+          request.params.threadId,
+          turn,
+        );
+        continue;
+      }
+      process.stdout.write(
+        `${JSON.stringify({ method: "turn/started", params: { threadId: request.params.threadId, turn } })}\n`,
+      );
+      const item = {
+        type: "agentMessage",
+        id: `message_native_fake_${turnRequestCount}`,
+        text: "",
+        phase: "final_answer",
+        memoryCitation: null,
+      };
+      process.stdout.write(
+        `${JSON.stringify({ method: "item/started", params: { item, threadId: request.params.threadId, turnId: turn.id, startedAtMs: 1 } })}\n`,
+      );
+      for (const delta of ["Hello", " from Codex."]) {
+        process.stdout.write(
+          `${JSON.stringify({ method: "item/agentMessage/delta", params: { threadId: request.params.threadId, turnId: turn.id, itemId: item.id, delta } })}\n`,
+        );
+      }
+      item.text = "Hello from Codex.";
+      process.stdout.write(
+        `${JSON.stringify({ method: "item/completed", params: { item, threadId: request.params.threadId, turnId: turn.id, completedAtMs: 2 } })}\n`,
+      );
+      turn.status = "completed";
+      turn.items = [item];
+      turn.completedAt = 2;
+      turn.durationMs = 1;
+      process.stdout.write(
+        `${JSON.stringify({ method: "turn/completed", params: { threadId: request.params.threadId, turn } })}\n`,
+      );
+      continue;
+    }
+    if (request.method === "turn/interrupt") {
+      interruptCount += 1;
+      if (process.env.MUHA_FAKE_INTERRUPT_COUNT_FILE) {
+        await writeFile(process.env.MUHA_FAKE_INTERRUPT_COUNT_FILE, String(interruptCount));
+      }
+      if (process.env.MUHA_FAKE_TURN_SCENARIO === "held-interrupt-rejected") {
+        process.stdout.write(
+          `${JSON.stringify({ id: request.id, error: { code: "interrupt_rejected", message: "rejected" } })}\n`,
+        );
+        continue;
+      }
+      process.stdout.write(`${JSON.stringify({ id: request.id, result: {} })}\n`);
+      if (activeTurn && request.params.turnId === activeTurn.id) {
+        activeTurn.status = "interrupted";
+        activeTurn.completedAt = 2;
+        sendNotification("turn/completed", {
+          threadId: activeTurnThreadId,
+          turn: activeTurn,
+        });
+        activeTurn = undefined;
+        activeTurnThreadId = undefined;
+      }
+      continue;
+    }
+    process.stderr.write(`unexpected fake Codex method: ${String(request.method)}\n`);
+    process.exitCode = 67;
+    break;
+  }
+  void keepAlive;
+}
+
+async function writePid(path, pid) {
+  const temporaryPath = `${path}.${process.pid}.tmp`;
+  await writeFile(temporaryPath, String(pid));
+  await rename(temporaryPath, path);
+}
+
+function rejectUnexpectedSandbox(request) {
+  if (["workspace-write", "danger-full-access"].includes(request.params?.sandbox)) return false;
+  process.stdout.write(`${JSON.stringify({
+    id: request.id,
+    error: {
+      code: "invalid_request",
+      message: "expected workspace-write sandbox",
+    },
+  })}\n`);
+  return true;
+}
+
+async function readNativeSessions() {
+  if (!process.env.MUHA_FAKE_NATIVE_SESSIONS_FILE) return [];
+  try {
+    return JSON.parse(await readFile(process.env.MUHA_FAKE_NATIVE_SESSIONS_FILE, "utf8"));
+  } catch (error) {
+    if (error?.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function writeNativeSessions(sessions) {
+  if (process.env.MUHA_FAKE_NATIVE_SESSIONS_FILE) {
+    await writeFile(process.env.MUHA_FAKE_NATIVE_SESSIONS_FILE, JSON.stringify(sessions));
+  }
+}
+
+function threadFromRecord(record) {
+  return {
+    id: record.id,
+    sessionId: record.id,
+    forkedFromId: null,
+    parentThreadId: null,
+    preview: "",
+    ephemeral: false,
+    isPinned: false,
+    modelProvider: "fake",
+    createdAt: record.createdAt ?? 1,
+    updatedAt: record.updatedAt ?? record.createdAt ?? 1,
+    recencyAt: null,
+    status: { type: "idle" },
+    path: null,
+    cwd: record.workspacePath,
+    cliVersion: "fake",
+    source: "appServer",
+    threadSource: null,
+    agentNickname: null,
+    agentRole: null,
+    gitInfo: null,
+    name: record.title ?? null,
+    turns: [],
+  };
+}
+
+async function emitRichTurn(threadId, turn) {
+  sendNotification("turn/started", { threadId, turn });
+  for (const pair of JSON.parse(process.env.MUHA_FAKE_EXTRA_NATIVE_ITEMS ?? "[]")) {
+    sendNotification("item/started", { threadId, turnId: turn.id, item: pair.started });
+    sendNotification("item/completed", { threadId, turnId: turn.id, item: pair.completed });
+  }
+  if (process.env.MUHA_FAKE_EXTRA_TOOL === "imageView") {
+    const item = { id: "native_extra", type: "imageView", path: "/native/picture.png" };
+    sendNotification("item/started", { threadId, turnId: turn.id, item });
+    // Upstream ACP reports this item as completed at native item/started.
+    // The actual native terminal arrives later, without another ACP update.
+    if (process.env.MUHA_FAKE_STALL_IMAGE_VIEW === "1") return;
+    await new Promise(resolve => setTimeout(resolve, 40));
+    sendNotification("item/completed", { threadId, turnId: turn.id, item });
+  }
+  if (process.env.MUHA_FAKE_EXTRA_TOOL === "webSearch") {
+    const item = { id: "native_extra", type: "webSearch", query: "muha", action: { type: "search", query: "muha", queries: ["muha"] }, results: null };
+    sendNotification("item/started", { threadId, turnId: turn.id, item });
+    sendNotification("item/completed", { threadId, turnId: turn.id, item: { ...item, results: [{ title: "Result", url: "https://example.test/muha" }] } });
+  }
+  const reasoning = { type: "reasoning", id: "reason_native_1", summary: [], content: [] };
+  sendNotification("item/started", { item: reasoning, threadId, turnId: turn.id, startedAtMs: 1 });
+  sendNotification("item/reasoning/summaryTextDelta", {
+    threadId,
+    turnId: turn.id,
+    itemId: reasoning.id,
+    delta: "Thinking.",
+    summaryIndex: 0,
+  });
+  sendNotification("item/completed", { item: reasoning, threadId, turnId: turn.id, completedAtMs: 2 });
+
+  const command = {
+    type: "commandExecution",
+    id: "tool_command_1",
+    command: "printf hi",
+    cwd: threadId.includes("never") ? "/never" : process.cwd(),
+    status: "inProgress",
+    commandActions: [],
+    aggregatedOutput: null,
+    exitCode: null,
+    durationMs: null,
+  };
+  command.cwd = globalThis.__muhaLastWorkspacePath ?? command.cwd;
+  const mcp = {
+    type: "mcpToolCall",
+    id: "tool_mcp_1",
+    server: "demo",
+    tool: "lookup",
+    status: "inProgress",
+    arguments: { query: "muha" },
+    result: null,
+    error: null,
+  };
+  sendNotification("item/started", { item: command, threadId, turnId: turn.id, startedAtMs: 3 });
+  sendNotification("item/started", { item: mcp, threadId, turnId: turn.id, startedAtMs: 4 });
+  sendNotification("item/commandExecution/outputDelta", { threadId, turnId: turn.id, itemId: command.id, delta: "hi" });
+  sendNotification("item/mcpToolCall/progress", { threadId, turnId: turn.id, itemId: mcp.id, message: "looking" });
+  command.status = "completed";
+  command.aggregatedOutput = "hi";
+  command.exitCode = 0;
+  command.durationMs = 3;
+  if (process.env.MUHA_FAKE_COMPLETED_TOOL_INPUT === "1") command.command = "native completed command snapshot";
+  sendNotification("item/completed", { item: command, threadId, turnId: turn.id, completedAtMs: 5 });
+  mcp.status = "failed";
+  mcp.error = { message: "lookup failed" };
+  sendNotification("item/completed", { item: mcp, threadId, turnId: turn.id, completedAtMs: 6 });
+
+  const firstUsage = usage(10, 2, 3, 1);
+  const finalUsage = usage(9, 4, 3, 1);
+  sendNotification("thread/tokenUsage/updated", { threadId, turnId: turn.id, tokenUsage: firstUsage });
+  sendNotification("thread/tokenUsage/updated", { threadId, turnId: turn.id, tokenUsage: firstUsage });
+  sendNotification("thread/tokenUsage/updated", { threadId, turnId: turn.id, tokenUsage: finalUsage });
+
+  const first = agentMessage("message_native_rich_1", "Interim.");
+  sendNotification("item/started", {
+    item: { ...first, text: "" }, threadId, turnId: turn.id, startedAtMs: 7,
+  });
+  sendNotification("item/agentMessage/delta", {
+    threadId, turnId: turn.id, itemId: first.id, delta: "Interim.",
+  });
+  sendNotification("item/completed", { item: first, threadId, turnId: turn.id, completedAtMs: 8 });
+  const second = agentMessage("message_native_rich_2", "Final.");
+  sendNotification("item/started", {
+    item: { ...second, text: "" }, threadId, turnId: turn.id, startedAtMs: 9,
+  });
+  sendNotification("item/agentMessage/delta", {
+    threadId, turnId: turn.id, itemId: second.id, delta: "Final.",
+  });
+  sendNotification("item/completed", { item: second, threadId, turnId: turn.id, completedAtMs: 10 });
+  turn.status = "completed";
+  turn.items = [reasoning, command, mcp, first, second];
+  turn.completedAt = 2;
+  turn.durationMs = 1;
+  sendNotification("turn/completed", { threadId, turn });
+}
+
+function emitAlternatingBurst(threadId, turn) {
+  sendNotification("turn/started", { threadId, turn });
+  const message = agentMessage("message_native_burst_1", "abcdefghij");
+  sendNotification("item/started", {
+    item: { ...message, text: "" },
+    threadId,
+    turnId: turn.id,
+    startedAtMs: 1,
+  });
+  for (let index = 0; index < 10; index += 1) {
+    sendNotification(
+      index % 2 === 0
+        ? "item/agentMessage/delta"
+        : "item/reasoning/textDelta",
+      {
+        threadId,
+        turnId: turn.id,
+        itemId: message.id,
+        delta: String(index),
+      },
+    );
+  }
+  sendNotification("item/completed", {
+    item: message,
+    threadId,
+    turnId: turn.id,
+    completedAtMs: 2,
+  });
+  turn.status = "completed";
+  turn.items = [message];
+  turn.completedAt = 2;
+  turn.durationMs = 1;
+  sendNotification("turn/completed", { threadId, turn });
+}
+
+function emitCoalescibleBurst(threadId, turn) {
+  sendNotification("turn/started", { threadId, turn });
+  const utf8 = process.env.MUHA_FAKE_TURN_SCENARIO === "burst-coalescible-utf8";
+  const chunks = Array.from(
+    { length: 10 },
+    (_, index) => utf8 ? "😀".repeat(20) : String(index),
+  );
+  const message = agentMessage("message_native_coalesced_1", chunks.join(""));
+  sendNotification("item/started", {
+    item: { ...message, text: "" },
+    threadId,
+    turnId: turn.id,
+    startedAtMs: 1,
+  });
+  for (const delta of chunks) {
+    sendNotification("item/agentMessage/delta", {
+      threadId,
+      turnId: turn.id,
+      itemId: message.id,
+      delta,
+    });
+  }
+  sendNotification("item/completed", {
+    item: message,
+    threadId,
+    turnId: turn.id,
+    completedAtMs: 2,
+  });
+  turn.status = "completed";
+  turn.items = [message];
+  turn.completedAt = 2;
+  turn.durationMs = 1;
+  sendNotification("turn/completed", { threadId, turn });
+}
+
+function emitOversizeDelta(threadId, turn) {
+  sendNotification("turn/started", { threadId, turn });
+  const text = `oversize-${"😀".repeat(300)}`;
+  const message = agentMessage("message_native_oversize_1", text);
+  sendNotification("item/started", {
+    item: { ...message, text: "" },
+    threadId,
+    turnId: turn.id,
+    startedAtMs: 1,
+  });
+  sendNotification("item/agentMessage/delta", {
+    threadId,
+    turnId: turn.id,
+    itemId: message.id,
+    delta: text,
+  });
+  sendNotification("item/completed", {
+    item: message,
+    threadId,
+    turnId: turn.id,
+    completedAtMs: 2,
+  });
+  turn.status = "completed";
+  turn.items = [message];
+  turn.completedAt = 2;
+  turn.durationMs = 1;
+  sendNotification("turn/completed", { threadId, turn });
+}
+
+function beginElicitationTurn(threadId, turn) {
+  sendNotification("turn/started", { threadId, turn });
+  const mcp = {
+    type: "mcpToolCall",
+    id: "tool_mcp_elicitation_1",
+    server: "fixture-server",
+    tool: "needs_input",
+    status: "inProgress",
+    arguments: {},
+    result: null,
+    error: null,
+  };
+  sendNotification("item/started", {
+    item: mcp,
+    threadId,
+    turnId: turn.id,
+    startedAtMs: 1,
+  });
+  const state = {
+    threadId,
+    turn,
+    mcp,
+    index: 0,
+    requests: [
+      {
+        id: "elicitation_form_1",
+        params: {
+          threadId,
+          turnId: turn.id,
+          serverName: "fixture-server",
+          mode: "form",
+          _meta: { fixture: true },
+          message: "Provide a value",
+          requestedSchema: {
+            type: "object",
+            properties: { value: { type: "string" } },
+            required: ["value"],
+          },
+        },
+      },
+      {
+        id: "elicitation_url_1",
+        params: {
+          threadId,
+          turnId: turn.id,
+          serverName: "fixture-server",
+          mode: "url",
+          _meta: null,
+          message: "Open URL",
+          url: "https://example.com/authorize",
+          elicitationId: "fixture-url",
+        },
+      },
+    ],
+  };
+  sendElicitation(state);
+  return state;
+}
+
+function sendElicitation(state) {
+  const request = state.requests[state.index];
+  process.stdout.write(`${JSON.stringify({
+    id: request.id,
+    method: "mcpServer/elicitation/request",
+    params: request.params,
+  })}\n`);
+}
+
+function finishElicitationTurn({ threadId, turn, mcp }) {
+  mcp.status = "failed";
+  mcp.error = { message: "elicitation declined" };
+  sendNotification("item/completed", {
+    item: mcp,
+    threadId,
+    turnId: turn.id,
+    completedAtMs: 2,
+  });
+  const message = agentMessage("message_native_elicitation_1", "Declined safely.");
+  sendNotification("item/started", {
+    item: { ...message, text: "" }, threadId, turnId: turn.id, startedAtMs: 3,
+  });
+  sendNotification("item/agentMessage/delta", {
+    threadId, turnId: turn.id, itemId: message.id, delta: message.text,
+  });
+  sendNotification("item/completed", {
+    item: message, threadId, turnId: turn.id, completedAtMs: 4,
+  });
+  turn.status = "completed";
+  turn.items = [mcp, message];
+  turn.completedAt = 4;
+  turn.durationMs = 3;
+  sendNotification("turn/completed", { threadId, turn });
+}
+
+function beginApprovalTurn(threadId, turn) {
+  sendNotification("turn/started", { threadId, turn });
+  sendNotification("serverRequest/resolved", {
+    threadId,
+    requestId: "unrelated_server_request",
+  });
+  const scenario = process.env.MUHA_FAKE_TURN_SCENARIO;
+  const isFileChange = scenario === "approval-file";
+  const isPermissions = scenario === "approval-permissions";
+  const command = isFileChange
+    ? {
+        type: "fileChange",
+        id: "tool_file_approval_1",
+        changes: [{ path: "fixture.txt", kind: "update" }],
+        status: "inProgress",
+      }
+    : {
+        type: "commandExecution",
+        id: "tool_command_approval_1",
+        command: "echo approved",
+        cwd: globalThis.__muhaLastWorkspacePath,
+        status: "inProgress",
+        commandActions: [],
+        aggregatedOutput: null,
+        exitCode: null,
+        durationMs: null,
+      };
+  sendNotification("item/started", {
+    item: command,
+    threadId,
+    turnId: turn.id,
+    startedAtMs: 1,
+  });
+  const requestId = "approval_native_1";
+  process.stdout.write(
+    `${JSON.stringify({
+      id: requestId,
+      method: isFileChange
+        ? "item/fileChange/requestApproval"
+        : isPermissions
+          ? "item/permissions/requestApproval"
+          : "item/commandExecution/requestApproval",
+      params: {
+        threadId,
+        turnId: turn.id,
+        itemId: command.id,
+        ...(isFileChange
+          ? { grantRoot: "/tmp/fixture-grant" }
+          : isPermissions
+            ? {
+                cwd: command.cwd,
+                permissions: {
+                  network: { host: "example.com" },
+                  fileSystem: { read: ["/tmp/fixture-read"] },
+                },
+              }
+            : {
+                command: command.command,
+                cwd: command.cwd,
+                networkApprovalContext: null,
+              }),
+        reason: "Fixture requests one-shot command approval",
+      },
+    })}\n`,
+  );
+  return { requestId, threadId, turn, command };
+}
+
+function finishApprovalTurn(threadId, turn, command) {
+  command.status = "completed";
+  if (command.type === "commandExecution") {
+    command.aggregatedOutput = "approved\n";
+    command.exitCode = 0;
+    command.durationMs = 1;
+  }
+  sendNotification("item/completed", {
+    item: command,
+    threadId,
+    turnId: turn.id,
+    completedAtMs: 2,
+  });
+  const message = agentMessage("message_native_approval_1", "Approved.");
+  sendNotification("item/started", {
+    item: { ...message, text: "" },
+    threadId,
+    turnId: turn.id,
+    startedAtMs: 3,
+  });
+  sendNotification("item/agentMessage/delta", {
+    threadId,
+    turnId: turn.id,
+    itemId: message.id,
+    delta: message.text,
+  });
+  sendNotification("item/completed", {
+    item: message,
+    threadId,
+    turnId: turn.id,
+    completedAtMs: 4,
+  });
+  turn.status = "completed";
+  turn.items = [command, message];
+  turn.completedAt = 4;
+  turn.durationMs = 3;
+  sendNotification("turn/completed", { threadId, turn });
+}
+
+function beginQuestionTurn(threadId, turn) {
+  sendNotification("turn/started", { threadId, turn });
+  const requestId = "question_native_1";
+  process.stdout.write(
+    `${JSON.stringify({
+      id: requestId,
+      method: "item/tool/requestUserInput",
+      params: {
+        threadId,
+        turnId: turn.id,
+        itemId: "request_user_input_1",
+        isBlocking: true,
+        questions: [
+          {
+            id: "target",
+            header: "Target",
+            question: "Choose a target",
+            isOther: false,
+            isSecret: process.env.MUHA_FAKE_TURN_SCENARIO === "question-secret",
+            options: [
+              { label: "Staging", description: "Use staging" },
+              { label: "Production", description: "Use production" },
+            ],
+          },
+          {
+            id: "details",
+            header: "Details",
+            question: "Add details",
+            isOther: true,
+            isSecret: false,
+            options: null,
+          },
+          {
+            id: "optional",
+            header: "Optional",
+            question: "Skip this question",
+            isOther: false,
+            isSecret: false,
+            options: [
+              { label: "Yes", description: "Continue" },
+              { label: "No", description: "Stop" },
+            ],
+          },
+        ],
+      },
+    })}\n`,
+  );
+  return { requestId, threadId, turn };
+}
+
+function finishQuestionTurn({ threadId, turn }) {
+  const message = agentMessage("message_native_question_1", "Thanks.");
+  sendNotification("item/started", {
+    item: { ...message, text: "" }, threadId, turnId: turn.id, startedAtMs: 1,
+  });
+  sendNotification("item/agentMessage/delta", {
+    threadId, turnId: turn.id, itemId: message.id, delta: message.text,
+  });
+  sendNotification("item/completed", {
+    item: message, threadId, turnId: turn.id, completedAtMs: 2,
+  });
+  turn.status = "completed";
+  turn.items = [message];
+  turn.completedAt = 2;
+  turn.durationMs = 1;
+  sendNotification("turn/completed", { threadId, turn });
+}
+
+function emitRecoveryScenario(scenario, threadId, turn) {
+  sendNotification("turn/started", { threadId, turn });
+  const command = {
+    type: "commandExecution",
+    id: "tool_command_recovery_1",
+    command: "printf recovered",
+    cwd: globalThis.__muhaLastWorkspacePath,
+    status: "completed",
+    commandActions: [],
+    aggregatedOutput: "recovered",
+    exitCode: 0,
+    durationMs: 5,
+  };
+  sendNotification("item/started", {
+    item: {
+      ...command,
+      status: "inProgress",
+      aggregatedOutput: null,
+      exitCode: null,
+      durationMs: null,
+    },
+    threadId,
+    turnId: turn.id,
+    startedAtMs: 1,
+  });
+  const message = agentMessage("message_native_recovery_1", "Done.");
+  sendNotification("item/started", {
+    item: { ...message, text: "" },
+    threadId,
+    turnId: turn.id,
+    startedAtMs: 2,
+  });
+  sendNotification("item/agentMessage/delta", {
+    threadId,
+    turnId: turn.id,
+    itemId: message.id,
+    delta: "Done.",
+  });
+  sendNotification("item/completed", {
+    item: message,
+    threadId,
+    turnId: turn.id,
+    completedAtMs: 3,
+  });
+  turn.status = "completed";
+  turn.items = [message];
+  turn.itemsView = { type: "summary" };
+  turn.completedAt = 3;
+  turn.durationMs = 2;
+  const snapshot = scenario === "recover-item-unmappable"
+    ? { type: "mysteryTool", id: command.id }
+    : scenario === "recover-item-running"
+      ? { ...command, status: "inProgress", aggregatedOutput: null, exitCode: null, durationMs: null }
+      : scenario === "recover-omits-item"
+        ? undefined
+        : command;
+  threadTurns.set(threadId, [{
+    id: turn.id,
+    items: snapshot === undefined ? [message] : [snapshot, message],
+    itemsView: { type: "full" },
+    status: "completed",
+  }]);
+  sendNotification("turn/completed", { threadId, turn });
+}
+
+function emitTerminalScenario(scenario, threadId, turn) {
+  sendNotification("turn/started", { threadId, turn });
+  if (scenario === "protocol-assistant-delta-without-start") {
+    sendNotification("item/agentMessage/delta", {
+      threadId,
+      turnId: turn.id,
+      itemId: "message_never_started",
+      delta: "invalid",
+    });
+  }
+  if (scenario === "protocol-assistant-duplicate-completion") {
+    const message = agentMessage("message_duplicate", "done");
+    sendNotification("item/started", {
+      item: { ...message, text: "" }, threadId, turnId: turn.id, startedAtMs: 1,
+    });
+    sendNotification("item/completed", { item: message, threadId, turnId: turn.id, completedAtMs: 2 });
+    sendNotification("item/completed", { item: message, threadId, turnId: turn.id, completedAtMs: 3 });
+  }
+  if (scenario === "protocol-tool-completion-without-start") {
+    sendNotification("item/completed", {
+      threadId,
+      turnId: turn.id,
+      completedAtMs: 2,
+      item: {
+        type: "commandExecution",
+        id: "tool_never_started",
+        command: "true",
+        cwd: globalThis.__muhaLastWorkspacePath,
+        status: "completed",
+        commandActions: [],
+        aggregatedOutput: "",
+        exitCode: 0,
+        durationMs: 1,
+      },
+    });
+  }
+  if (scenario === "native-failed") {
+    turn.status = "failed";
+    turn.error = { message: "native fixture failure" };
+    sendNotification("turn/completed", { threadId, turn });
+    return;
+  }
+  if (scenario === "native-interrupted") {
+    turn.status = "interrupted";
+    sendNotification("turn/completed", { threadId, turn });
+    return;
+  }
+  turn.status = "completed";
+  turn.completedAt = 2;
+  turn.durationMs = 1;
+  sendNotification("turn/completed", { threadId, turn });
+}
+
+function usage(inputTokens, outputTokens, cachedInputTokens, reasoningOutputTokens) {
+  const last = {
+    totalTokens: inputTokens + outputTokens,
+    inputTokens,
+    cachedInputTokens,
+    cacheWriteInputTokens: 0,
+    outputTokens,
+    reasoningOutputTokens,
+  };
+  const total = {
+    totalTokens: last.totalTokens + 150,
+    inputTokens: last.inputTokens + 100,
+    cachedInputTokens: last.cachedInputTokens + 30,
+    cacheWriteInputTokens: 0,
+    outputTokens: last.outputTokens + 50,
+    reasoningOutputTokens: last.reasoningOutputTokens + 20,
+  };
+  return { total, last, modelContextWindow: 1000 };
+}
+
+function agentMessage(id, text) {
+  return { type: "agentMessage", id, text, phase: "final_answer", memoryCitation: null };
+}
+
+function sendNotification(method, params) {
+  process.stdout.write(`${JSON.stringify({ method, params })}\n`);
+}

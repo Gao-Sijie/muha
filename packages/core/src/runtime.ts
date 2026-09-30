@@ -17,6 +17,7 @@ import {
   type UnsupportedCapabilityErrorData,
   unsupportedCapabilityError as unsupportedCapability,
   unsupportedCapabilityErrorData as unsupportedCapabilityData,
+  unsupportedRoute,
 } from "./errors.js";
 import {
   isHarnessKind,
@@ -35,6 +36,12 @@ import {
   type TurnQueueLimits,
 } from "./session.js";
 import type { ListedSession, SessionReference } from "./session.js";
+import {
+  createSessionReference,
+  parseSessionReference,
+  referenceRoute,
+  type HarnessIntegrationRoute,
+} from "./reference.js";
 import { assertSupportedHost } from "./platform.js";
 import { currentRuntimeScheduler } from "./scheduler.js";
 import type { HarnessKind, HarnessRegistration } from "./index.js";
@@ -306,6 +313,7 @@ class Runtime implements MuhaRuntime {
   #fatalAffectedSessions: ReadonlySet<AdapterSession> | undefined;
   #resolveTermination!: (termination: RuntimeTermination) => void;
   readonly #sessions = new Set<CoreAgentSession>();
+  readonly #resumingNativeSessions = new Set<string>();
   readonly #workspaceConfigurationTails = new Map<string, Promise<void>>();
   readonly #workspaceOperations = new Set<Promise<unknown>>();
   readonly #registrationsByKind: ReadonlyMap<HarnessKind, OfficialHarnessRegistration>;
@@ -584,6 +592,10 @@ class Runtime implements MuhaRuntime {
       this.turnQueueLimits,
       (harness, operation, start) => this.#commands.runControl(harness, operation, start),
       { maxRetries: options.turnRetryPolicy?.maxRetries ?? 0 },
+      undefined,
+      undefined,
+      adapter.route ?? "native",
+      () => this.#nativeSessionBusy(options.harness, adapterSession.nativeSessionId),
     );
     this.#sessions.add(session);
     return session;
@@ -591,14 +603,39 @@ class Runtime implements MuhaRuntime {
 
   async resumeSession(options: ResumeSessionOptions): Promise<AgentSession> {
     this.#assertActive();
-    validateResumeSessionOptions(options);
-    return this.#commands.runCancellable(() => this.#resumeSession(options));
+    const reference = validateResumeSessionOptions(options);
+    const snapshot = { ...options, reference };
+    // Route is not part of native ownership: an alternate native/combined
+    // Reference must not start a second executor for the same conversation.
+    const key = JSON.stringify([reference.harness, reference.sessionId]);
+    if (this.#nativeSessionBusy(reference.harness, reference.sessionId)) {
+      throw new MuhaError({ code: "SESSION_BUSY", message: "Native Session already has an active execution or control operation" });
+    }
+    this.#resumingNativeSessions.add(key);
+    // Keep ownership bookkeeping outside the cancellable command: another
+    // promise layer inside it would let fatal-close overtake watchdog errors.
+    try { return await this.#commands.runCancellable(() => this.#resumeSession(snapshot)); }
+    finally { this.#resumingNativeSessions.delete(key); }
+  }
+
+  #nativeSessionBusy(harness: HarnessKind, nativeSessionId: string): boolean {
+    return this.#resumingNativeSessions.has(JSON.stringify([harness, nativeSessionId])) || [...this.#sessions].some(session =>
+      session.reference.harness === harness && session.reference.sessionId === nativeSessionId && session.nativeOperationPending);
   }
 
   async #resumeSession(options: ResumeSessionOptions): Promise<AgentSession> {
     const { reference } = options;
     const adapter = this.#requireAdapter(reference.harness);
     const capabilities = this.#registrationsByKind.get(reference.harness)!.capabilities;
+    const route = referenceRoute(reference);
+    const adapterRoute = adapter.route ?? "native";
+    if (route !== adapterRoute && !adapter.resumeRoutes?.includes(route)) {
+      throw unsupportedRoute(
+        reference.harness,
+        route,
+        `Session Reference requires route ${route} but the enabled ${reference.harness} Adapter serves ${adapterRoute}`,
+      );
+    }
     const approvalPolicy = options.approvalPolicy ?? "interactive";
     requireSessionOptionCapabilities(
       reference.harness,
@@ -625,6 +662,7 @@ class Runtime implements MuhaRuntime {
         () => adapter.resumeSession({
           nativeSessionId: reference.sessionId,
           workspacePath,
+          route,
           ...(options.model === undefined ? {} : { model: options.model }),
           ...(options.effort === undefined ? {} : { effort: options.effort }),
           approvalPolicy,
@@ -650,6 +688,10 @@ class Runtime implements MuhaRuntime {
       this.turnQueueLimits,
       (harness, operation, start) => this.#commands.runControl(harness, operation, start),
       { maxRetries: options.turnRetryPolicy?.maxRetries ?? 0 },
+      undefined,
+      undefined,
+      route,
+      () => this.#nativeSessionBusy(reference.harness, reference.sessionId),
     );
     this.#sessions.add(session);
     return session;
@@ -688,11 +730,7 @@ class Runtime implements MuhaRuntime {
           });
         }
         return Object.freeze({
-          reference: Object.freeze({
-            harness: options.harness,
-            sessionId: entry.nativeSessionId,
-            workspacePath,
-          }),
+          reference: createSessionReference(options.harness, entry.nativeSessionId, workspacePath, adapter.route ?? "native"),
           ...(entry.title === undefined ? {} : { title: entry.title }),
           ...(entry.createdAt === undefined ? {} : { createdAt: entry.createdAt }),
           ...(entry.updatedAt === undefined ? {} : { updatedAt: entry.updatedAt }),
@@ -1165,10 +1203,10 @@ async function prepareConfiguredWorkspace(
   }
 }
 
-function validateResumeSessionOptions(options: ResumeSessionOptions): void {
+function validateResumeSessionOptions(options: ResumeSessionOptions): SessionReference {
   if (!isPlainObject(options)) invalid("resumeSession options must be an object");
   assertKnownKeys(options, ["reference", "model", "effort", "approvalPolicy", "turnRetryPolicy", "createWorkspaceIfMissing"]);
-  validateSessionReference(options.reference);
+  const reference = parseSessionReference(options.reference);
   if (options.model !== undefined && (typeof options.model !== "string" || options.model.length === 0)) invalid("Model must be a non-empty string");
   if (options.effort !== undefined) validateEffortInput(options.effort);
   if (options.approvalPolicy !== undefined &&
@@ -1177,6 +1215,7 @@ function validateResumeSessionOptions(options: ResumeSessionOptions): void {
   }
   if (options.turnRetryPolicy !== undefined) validateTurnRetryPolicy(options.turnRetryPolicy);
   if (options.createWorkspaceIfMissing !== undefined && typeof options.createWorkspaceIfMissing !== "boolean") invalid("createWorkspaceIfMissing must be boolean");
+  return reference;
 }
 
 function validateTurnRetryPolicy(policy: unknown): asserts policy is TurnRetryPolicy {
@@ -1192,14 +1231,6 @@ function validateListSessionsOptions(options: ListSessionsOptions): void {
   assertKnownKeys(options, ["harness", "workspacePath"]);
   if (!isHarnessKind(options.harness)) invalid("Unknown Harness Kind");
   if (typeof options.workspacePath !== "string" || !isAbsolute(options.workspacePath)) invalid("Workspace path must be absolute");
-}
-
-function validateSessionReference(reference: SessionReference): void {
-  if (!isPlainObject(reference)) invalid("Session Reference must be an object");
-  assertKnownKeys(reference, ["harness", "sessionId", "workspacePath"]);
-  if (!isHarnessKind(reference.harness)) invalid("Unknown Harness Kind");
-  if (typeof reference.sessionId !== "string" || reference.sessionId.length === 0) invalid("Session ID must be non-empty");
-  if (typeof reference.workspacePath !== "string" || !isAbsolute(reference.workspacePath)) invalid("Session Workspace path must be absolute");
 }
 
 async function prepareResumeWorkspace(workspacePath: string, createIfMissing: boolean): Promise<string> {

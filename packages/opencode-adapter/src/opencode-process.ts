@@ -1,16 +1,20 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { readFile, realpath } from "node:fs/promises";
-import { basename, dirname, isAbsolute } from "node:path";
+import { basename, isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
+import { OpenCode, type OpenCodeClient } from "@opencode/client";
+import { OpenCodeV2Service } from "./opencode-v2-service.js";
+import { OpenCodeV2Api } from "./opencode-v2-api.js";
+import { OpenCodeV2Turn } from "./opencode-v2-turn.js";
+import { openCodeV2Input } from "./opencode-v2-image-input.js";
 
 import { MuhaError, type HarnessErrorData, type OfficialAdapterOptions } from "@muha-sdk/core";
 import type {
   AdapterCreateSessionOptions,
   AdapterListedSession,
   AdapterQuestionAnswer,
-  AdapterQuestionItem,
+  AdapterLegacyQuestionItem,
   AdapterQuestionResponse,
   AdapterResumeSessionOptions,
   AdapterSession,
@@ -21,7 +25,6 @@ import type {
   LiveHarnessAdapterContext,
 } from "@muha-sdk/core/internal";
 
-const defaultTimeoutMs = 60_000;
 type JsonObject = Record<string, unknown>;
 type OpenCodeToolRecord = {
   readonly messageId: string;
@@ -35,102 +38,36 @@ type OpenCodeToolRecord = {
 
 export class OpenCodeProcess implements LiveHarnessAdapter {
   readonly kind = "opencode" as const;
+  readonly route = "native" as const;
   readonly #password = randomBytes(32).toString("base64url");
   readonly #authorization: string;
   readonly #workspaces = new Map<string, WorkspaceEventStream>();
-  #child: ChildProcessWithoutNullStreams | undefined;
-  #processGroupId: number | undefined;
-  #lines: import("node:readline").Interface | undefined;
+  readonly #service: OpenCodeV2Service | undefined;
+  #api: OpenCodeV2Api | undefined;
   #baseUrl: string | undefined;
   #closePromise: Promise<void> | undefined;
+  readonly #requests = new AbortController();
 
   constructor(
     readonly options: OfficialAdapterOptions,
     readonly context: LiveHarnessAdapterContext,
+    attached?: { readonly baseUrl: string; readonly authorization: string },
   ) {
-    this.#authorization = `Basic ${Buffer.from(`opencode:${this.#password}`).toString("base64")}`;
+    this.#authorization = attached?.authorization ?? `Basic ${Buffer.from(`opencode:${this.#password}`).toString("base64")}`;
+    this.#baseUrl = attached?.baseUrl;
+    this.#service = attached === undefined ? new OpenCodeV2Service(options, context, this.#password) : undefined;
   }
 
   async initialize(): Promise<void> {
-    const environment: NodeJS.ProcessEnv = { ...process.env };
-    for (const [name, value] of Object.entries(this.options.env ?? {})) {
-      if (value === undefined) delete environment[name];
-      else environment[name] = value;
-    }
-    environment.OPENCODE_SERVER_USERNAME = "opencode";
-    environment.OPENCODE_SERVER_PASSWORD = this.#password;
-
-    let child: ChildProcessWithoutNullStreams;
-    try {
-      child = spawn(
-        "opencode",
-        ["serve", "--hostname", "127.0.0.1", "--port", "0", "--no-mdns"],
-        {
-          detached: true,
-          env: environment,
-          shell: false,
-          stdio: ["pipe", "pipe", "pipe"],
-        },
-      );
-    } catch (error) {
-      throw failure("initialize", "spawn", error);
-    }
-    this.#child = child;
-    if (Number.isSafeInteger(child.pid) && child.pid !== undefined && child.pid > 1) {
-      this.#processGroupId = child.pid;
-    }
-    child.stdin.end();
-    child.stderr.resume();
-    const { createInterface } = await import("node:readline");
-    this.#lines = createInterface({ input: child.stdout });
-
-    const ready = new Promise<void>((resolve, reject) => {
-      let observedReadyLine = false;
-      this.#lines?.on("line", (line) => {
-        if (observedReadyLine) return;
-        const match = /^opencode server listening on http:\/\/127\.0\.0\.1:(\d+)$/.exec(line);
-        if (!match) return;
-        const port = Number(match[1]);
-        if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) {
-          reject(failure("initialize", "ready", new Error("invalid ready port")));
-          return;
-        }
-        observedReadyLine = true;
-        this.#baseUrl = `http://127.0.0.1:${port}`;
-        void this.#checkHealth().then(resolve, reject);
-      });
-      child.once("error", (error) => reject(failure("initialize", "spawn", error)));
-      child.once("exit", (exitCode, signal) => {
-        const error = {
-          code: "HARNESS_ERROR",
-          message: observedReadyLine
-            ? "OpenCode server exited"
-            : "OpenCode server exited before readiness",
-          harness: "opencode",
-          operation: observedReadyLine ? "closeHarness" : "initialize",
-          command: "opencode",
-          stage: "ready",
-          exitCode,
-          signal,
-        } as const;
-        if (observedReadyLine && !this.#closePromise) this.context.reportFatalError(error);
-        else reject(error);
-      });
-    });
-
-    try {
-      await withTimeout(
-        ready,
-        this.options.startupTimeoutMs ?? defaultTimeoutMs,
-        () => failure("initialize", "ready", new Error("startup timeout")),
-      );
-    } catch (error) {
-      await this.#forceReclaim();
-      throw normalizeHarnessFailure(error, "initialize", "ready");
-    }
+    if (this.#baseUrl !== undefined) { await this.#checkHealth(); return; }
+    if (this.#service === undefined) throw failure("initialize", "ready", new Error("service missing"));
+    await this.#service.initialize();
+    this.#baseUrl = this.#service.baseUrl;
+    this.#api = new OpenCodeV2Api(this.#service.client, this.context);
   }
 
   async createSession(options: AdapterCreateSessionOptions): Promise<AdapterSession> {
+    await this.#service?.ensureOrderedPlugin(options.workspacePath);
     const model = options.model === undefined
       ? undefined
       : await this.validateModel(options.model, "createSession", options.workspacePath);
@@ -144,22 +81,22 @@ export class OpenCodeProcess implements LiveHarnessAdapter {
     }
     const stream = await this.#acquireWorkspace(options.workspacePath);
     try {
-      const payload = await this.requestJson(
-        "POST",
-        "/session",
-        "createSession",
+      const payload = await this.#requireApi().createSession(
         options.workspacePath,
-        {},
+        model === undefined ? undefined : toV2ModelRef(model, options.effort),
+        v2Permissions(options.approvalPolicy),
       );
       const info = await validateSession(payload, options.workspacePath);
-      return new OpenCodeSession(
+      if (model !== undefined) assertSelectedV2Model(payload, model, options.effort);
+      const session = new OpenCodeSession(
         this,
         stream,
         info.id,
-        options.approvalPolicy === "autoApprove",
+        options.approvalPolicy,
         model,
         options.effort,
       );
+      return session;
     } catch (error) {
       stream.release();
       throw error;
@@ -167,51 +104,47 @@ export class OpenCodeProcess implements LiveHarnessAdapter {
   }
 
   async resumeSession(options: AdapterResumeSessionOptions): Promise<AdapterSession> {
-    let payload: unknown;
-    try {
-      payload = await this.requestJson(
-        "GET",
-        `/session/${encodeURIComponent(options.nativeSessionId)}`,
+    await this.#service?.ensureOrderedPlugin(options.workspacePath);
+    const payload = await this.#requireApi().getSession(options.nativeSessionId);
+    const info = await validateSession(payload, options.workspacePath);
+    if (info.id !== options.nativeSessionId) {
+      throw protocolFailure("OpenCode resumed a different Session");
+    }
+    const nativeSelection = selectedV2Model(payload);
+    const model = options.model === undefined
+      ? nativeSelection?.model
+      : await this.validateModel(options.model, "resumeSession", options.workspacePath);
+    const effort = options.effort ??
+      (options.model === undefined || options.model === nativeSelection?.model
+        ? nativeSelection?.effort : undefined);
+    if (options.effort !== undefined) {
+      await this.validateEffort(
+        options.effort,
+        model,
         "resumeSession",
         options.workspacePath,
       );
-    } catch (error) {
-      throw normalizeSessionLookupFailure(error);
-    }
-    const info = await validateSession(payload, options.workspacePath);
-    if (info.id !== options.nativeSessionId) throw protocolFailure("OpenCode resumed a different Session");
-    const model = options.model === undefined
-      ? await this.#readSessionModel(options.nativeSessionId, options.workspacePath)
-      : await this.validateModel(options.model, "resumeSession", options.workspacePath);
-    if (options.effort !== undefined) {
-      await this.validateEffort(options.effort, model, "resumeSession", options.workspacePath);
     }
     const stream = await this.#acquireWorkspace(options.workspacePath);
-    return new OpenCodeSession(
-      this,
-      stream,
-      info.id,
-      options.approvalPolicy === "autoApprove",
-      model,
-      options.effort,
-    );
+    try {
+      const permissions = v2Permissions(options.approvalPolicy);
+      if (permissions !== undefined) await this.#requireApi().setPermissions(info.id, permissions);
+      if ((options.model !== undefined && options.model !== nativeSelection?.model) ||
+          options.effort !== undefined) {
+        if (model === undefined) throw protocolFailure("OpenCode v2 Resume Model is unresolved");
+        await this.selectModel(info.id, model, effort, "resumeSession");
+      }
+      return new OpenCodeSession(this, stream, info.id, options.approvalPolicy, model, effort);
+    } catch (error) {
+      stream.release();
+      throw error;
+    }
   }
 
   async listSessions(workspacePath: string): Promise<readonly AdapterListedSession[]> {
+    await this.#service?.ensureOrderedPlugin(workspacePath);
     const sessions: AdapterListedSession[] = [];
-    const seenPages = new Set<string>();
-    let path: string | undefined = "/session?limit=2147483647";
-    while (path !== undefined) {
-      if (seenPages.has(path)) throw protocolFailure("OpenCode repeated a Session list page");
-      seenPages.add(path);
-      const { payload, response } = await this.requestJsonResponse(
-        "GET",
-        path,
-        "listSessions",
-        workspacePath,
-      );
-      if (!Array.isArray(payload)) throw protocolFailure("OpenCode Session list must be an array");
-      for (const value of payload) {
+    for (const value of await this.#requireApi().listSessions(workspacePath)) {
         const info = await validateListedSession(value, workspacePath);
         if (info === undefined) continue;
         sessions.push({
@@ -221,40 +154,67 @@ export class OpenCodeProcess implements LiveHarnessAdapter {
           ...(info.createdAt === undefined ? {} : { createdAt: info.createdAt }),
           ...(info.updatedAt === undefined ? {} : { updatedAt: info.updatedAt }),
         });
-      }
-      path = this.#nextPage(response);
     }
     return sessions;
   }
 
-  async startTurn(session: OpenCodeSession, input: readonly AdapterTurnInput[]): Promise<AdapterTurn> {
-    const nativeParts = await Promise.all(input.map(mapTurnInput));
+  #requireApi(): OpenCodeV2Api {
+    if (this.#api === undefined) throw harnessCommandFailure("createSession", "OpenCode v2 service is not ready");
+    return this.#api;
+  }
+
+  async startTurn(
+    session: OpenCodeSession,
+    input: readonly AdapterTurnInput[],
+  ): Promise<AdapterTurn> {
+    const prompt = await openCodeV2Input(input);
+    await this.#service?.ensureOrderedPlugin(session.stream.workspacePath);
     await session.stream.ensureConnected();
-    const capture = new OpenCodeTurnCapture(this, session);
-    const unsubscribe = session.stream.subscribe(
+    const api = this.#requireApi();
+    if (prompt.files && prompt.files.length > 0) {
+      await this.#validateImageModel(session, api);
+    }
+    const baseline = await api.listMessages(session.nativeSessionId);
+    const capture = new OpenCodeV2Turn(
+      api,
       session.nativeSessionId,
-      (event) => capture.receive(event),
-      session.autoApprove,
+      baseline,
+      () => session.closeAfterStreamFailure(),
+      session.approvalPolicy,
     );
+    const unsubscribe = session.stream.subscribe(session.nativeSessionId, (event) =>
+      capture.receive(event), true);
     capture.attach(unsubscribe);
     try {
-      if (session.autoApprove) await this.#loadDescendants(session);
-      await this.requestNoContent(
-        "POST",
-        `/session/${encodeURIComponent(session.nativeSessionId)}/prompt_async`,
-        "startTurn",
-        session.stream.workspacePath,
-        {
-          ...(session.modelPair === undefined ? {} : { model: session.modelPair }),
-          ...(session.variant === undefined ? {} : { variant: session.variant }),
-          parts: nativeParts,
-        },
-      );
-      capture.accept();
+      const acknowledgement = await api.prompt(session.nativeSessionId, capture.inboxID, prompt);
+      capture.accept(acknowledgement);
       return capture;
     } catch (error) {
       capture.dispose();
       throw error;
+    }
+  }
+
+  async #validateImageModel(session: OpenCodeSession, api: OpenCodeV2Api): Promise<void> {
+    const current = asObjectProtocol(await api.getSession(session.nativeSessionId), "OpenCode v2 Session");
+    let selected: unknown = current.model;
+    if (selected === undefined || selected === null) {
+      selected = await api.defaultModel(session.stream.workspacePath);
+    }
+    const model = asObjectProtocol(selected, "OpenCode v2 selected Model");
+    const providerID = requireProtocolString(model.providerID, "OpenCode v2 Model provider");
+    const modelID = requireProtocolString(model.id, "OpenCode v2 Model id");
+    const entry = (await api.listModels(session.stream.workspacePath, "startTurn"))
+      .find((value) => isObject(value) && value.providerID === providerID && value.id === modelID);
+    if (!isObject(entry)) {
+      throw harnessCommandFailure("startTurn", "OpenCode image Model is unavailable", "model_not_found");
+    }
+    const capabilities = asObjectProtocol(entry.capabilities, "OpenCode v2 Model capabilities");
+    if (!Array.isArray(capabilities.input) || !capabilities.input.every((value) => typeof value === "string")) {
+      throw protocolFailure("OpenCode v2 Model input capabilities are invalid");
+    }
+    if (!capabilities.input.includes("image")) {
+      throw harnessCommandFailure("startTurn", "OpenCode Model does not accept images", "image_not_supported");
     }
   }
 
@@ -268,16 +228,26 @@ export class OpenCodeProcess implements LiveHarnessAdapter {
     if (value !== true) throw protocolFailure("OpenCode abort response is invalid");
   }
 
+  async observeSession(
+    options: AdapterResumeSessionOptions,
+    receive: (event: JsonObject) => void,
+  ): Promise<() => void> {
+    // Reuse native identity/Workspace checks and the already supported
+    // Session-tree subscription without creating or executing a Session.
+    const session = await this.resumeSession(options) as OpenCodeSession;
+    const unsubscribe = session.stream.subscribe(session.nativeSessionId, receive, true);
+    try {
+      await this.#loadDescendants(session);
+    } catch (error) { unsubscribe(); await session.close(); throw error; }
+    return () => { unsubscribe(); void session.close(); };
+  }
+
   async #loadDescendants(session: OpenCodeSession): Promise<void> {
     const pending = [session.nativeSessionId];
     const seen = new Set(pending);
     for (const parentId of pending) {
-      const children = await this.requestJson(
-        "GET",
-        `/session/${encodeURIComponent(parentId)}/children`,
-        "startTurn",
-        session.stream.workspacePath,
-      );
+      const children = await this.requestJson("GET", `/session/${encodeURIComponent(parentId)}/children`,
+        "startTurn", session.stream.workspacePath);
       if (!Array.isArray(children)) throw protocolFailure("OpenCode Session children must be an array");
       for (const child of children) {
         const info = await validateSession(child, session.stream.workspacePath);
@@ -330,16 +300,15 @@ export class OpenCodeProcess implements LiveHarnessAdapter {
     workspacePath: string,
   ): Promise<string> {
     const pair = parseOpenCodeModel(model);
-    const payload = await this.requestJson("GET", "/provider", operation, workspacePath);
-    const catalog = asObjectProtocol(payload, "OpenCode Provider catalog");
-    if (!Array.isArray(catalog.all)) throw protocolFailure("OpenCode Provider catalog all field must be an array");
-    for (const value of catalog.all) {
-      const provider = asObjectProtocol(value, "OpenCode Provider");
-      const providerID = requireProtocolString(provider.id, "OpenCode Provider id");
-      const models = asObjectProtocol(provider.models, "OpenCode Provider models");
-      if (providerID === pair.providerID && Object.hasOwn(models, pair.modelID)) return model;
+    for (const value of await this.#requireApi().listModels(workspacePath, operation)) {
+      const entry = asObjectProtocol(value, "OpenCode v2 Model");
+      if (entry.providerID === pair.providerID && entry.id === pair.modelID) return model;
     }
-    throw harnessCommandFailure(operation, `OpenCode does not expose model: ${model}`, "model_not_found");
+    throw harnessCommandFailure(
+      operation,
+      `OpenCode does not expose model: ${model}`,
+      "model_not_found",
+    );
   }
 
   async validateEffort(
@@ -356,30 +325,35 @@ export class OpenCodeProcess implements LiveHarnessAdapter {
       );
     }
     const pair = parseOpenCodeModel(model);
-    const payload = await this.requestJson("GET", "/provider", operation, workspacePath);
-    const catalog = asObjectProtocol(payload, "OpenCode Provider catalog");
-    if (!Array.isArray(catalog.all)) throw protocolFailure("OpenCode Provider catalog all field must be an array");
-    for (const value of catalog.all) {
-      const provider = asObjectProtocol(value, "OpenCode Provider");
-      if (requireProtocolString(provider.id, "OpenCode Provider id") !== pair.providerID) continue;
-      const models = asObjectProtocol(provider.models, "OpenCode Provider models");
-      const entry = models[pair.modelID];
-      if (!isObject(entry)) continue;
-      const variants = Array.isArray(entry.variants)
-        ? entry.variants
-        : isObject(entry.variants)
-          ? Object.keys(entry.variants)
-          : typeof entry.variant === "string"
-            ? [entry.variant]
-            : [];
-      if (variants.some((candidate) => candidate === effort)) return;
+    for (const value of await this.#requireApi().listModels(workspacePath, operation)) {
+      const entry = asObjectProtocol(value, "OpenCode v2 Model");
+      if (entry.providerID !== pair.providerID || entry.id !== pair.modelID) continue;
+      if (!Array.isArray(entry.variants)) {
+        throw protocolFailure("OpenCode v2 Model variants are invalid");
+      }
+      if (entry.variants.some((candidate) => isObject(candidate) && candidate.id === effort)) return;
       throw harnessCommandFailure(
         operation,
         `OpenCode does not support Variant for model: ${model}`,
         "effort_not_supported",
       );
     }
-    throw harnessCommandFailure(operation, `OpenCode does not expose model: ${model}`, "model_not_found");
+    throw harnessCommandFailure(
+      operation,
+      `OpenCode does not expose model: ${model}`,
+      "model_not_found",
+    );
+  }
+
+  async selectModel(
+    nativeSessionId: string,
+    model: string,
+    effort: string | undefined,
+    operation: HarnessErrorData["operation"],
+  ): Promise<void> {
+    await this.#requireApi().switchModel(nativeSessionId, toV2ModelRef(model, effort), operation);
+    const current = await this.#requireApi().getSession(nativeSessionId);
+    assertSelectedV2Model(current, model, effort);
   }
 
   async #readSessionModel(nativeSessionId: string, workspacePath: string): Promise<string | undefined> {
@@ -395,10 +369,9 @@ export class OpenCodeProcess implements LiveHarnessAdapter {
       const info = asObjectProtocol(entry.info, "OpenCode Session message info");
       if (info.role !== "user" || info.model === undefined) continue;
       const model = asObjectProtocol(info.model, "OpenCode Session message model");
-      return joinOpenCodeModel(
-        requireProtocolString(model.providerID, "OpenCode Session provider id"),
-        requireProtocolString(model.modelID, "OpenCode Session model id"),
-      );
+      const providerID = requireProtocolString(model.providerID, "OpenCode Session provider id");
+      const modelID = requireProtocolString(model.modelID, "OpenCode Session model id");
+      return joinOpenCodeModel(providerID, modelID);
     }
     return undefined;
   }
@@ -467,6 +440,7 @@ export class OpenCodeProcess implements LiveHarnessAdapter {
     try {
       return await fetch(`${baseUrl}${path}`, {
         method,
+        signal: this.#requests.signal,
         headers: {
           authorization: this.#authorization,
           ...(workspacePath === undefined ? {} : { "x-opencode-directory": workspacePath }),
@@ -504,8 +478,10 @@ export class OpenCodeProcess implements LiveHarnessAdapter {
     if (!stream) {
       stream = new WorkspaceEventStream(
         workspacePath,
-        this.#requireBaseUrl(),
-        this.#authorization,
+        this.#service?.client ?? OpenCode.make({
+          baseUrl: this.#requireBaseUrl(),
+          headers: { authorization: this.#authorization },
+        }),
         this.context,
         () => this.#workspaces.delete(workspacePath),
       );
@@ -535,7 +511,9 @@ export class OpenCodeProcess implements LiveHarnessAdapter {
       if (href === undefined) throw protocolFailure("OpenCode Session list Link target is missing");
       const base = new URL(this.#requireBaseUrl());
       const target = new URL(href, base);
-      if (target.origin !== base.origin) throw protocolFailure("OpenCode Session list next page left the owned server");
+      if (target.origin !== base.origin) {
+        throw protocolFailure("OpenCode Session list next page left the owned server");
+      }
       return `${target.pathname}${target.search}`;
     }
     const cursor = response.headers.get("x-next-cursor");
@@ -550,32 +528,10 @@ export class OpenCodeProcess implements LiveHarnessAdapter {
   }
 
   async #performClose(): Promise<void> {
+    this.#requests.abort();
     for (const stream of this.#workspaces.values()) stream.close();
     this.#workspaces.clear();
-    const child = this.#child;
-    if (!child) return;
-    const pid = this.#processGroupId;
-    if (hasExited(child)) {
-      if (pid !== undefined) signalProcessGroup(pid, "SIGKILL");
-      return;
-    }
-    if (pid === undefined) throw failure("closeHarness", "shutdown", new Error("invalid child process id"));
-    signalProcessGroup(pid, "SIGTERM");
-    if (await exitsWithin(child, this.options.shutdownTimeoutMs ?? defaultTimeoutMs)) {
-      signalProcessGroup(pid, "SIGKILL");
-      return;
-    }
-    await this.#forceReclaim();
-  }
-
-  async #forceReclaim(): Promise<void> {
-    const child = this.#child;
-    if (!child) return;
-    const pid = this.#processGroupId;
-    if (pid !== undefined) signalProcessGroup(pid, "SIGKILL");
-    if (hasExited(child)) return;
-    if (pid === undefined) throw failure("closeHarness", "shutdown", new Error("invalid child process id"));
-    if (!(await exitsWithin(child, 5_000))) throw failure("closeHarness", "shutdown", new Error("forced process reclamation timed out"));
+    await this.#service?.close();
   }
 }
 
@@ -599,13 +555,14 @@ class WorkspaceEventStream {
 
   constructor(
     readonly workspacePath: string,
-    readonly baseUrl: string,
-    readonly authorization: string,
+    readonly client: OpenCodeClient,
     readonly context: LiveHarnessAdapterContext,
     readonly onUnused: () => void,
   ) {}
 
-  get references(): number { return this.#references; }
+  get references(): number {
+    return this.#references;
+  }
 
   async acquire(): Promise<void> {
     this.#references += 1;
@@ -695,71 +652,30 @@ class WorkspaceEventStream {
   async #consume(connection: WorkspaceStreamConnection): Promise<void> {
     const { signal } = connection.controller;
     try {
-      const response = await fetch(`${this.baseUrl}/event`, {
-        headers: {
-          authorization: this.authorization,
-          "x-opencode-directory": this.workspacePath,
-        },
-        signal,
-      });
-      if (response.status !== 200 || !response.body) throw new Error("OpenCode event subscription was rejected");
-      let buffer = "";
-      const decoder = new TextDecoder();
-      for await (const chunk of response.body) {
-        buffer += decoder.decode(chunk, { stream: true }).replaceAll("\r\n", "\n");
-        let boundary;
-        while ((boundary = buffer.indexOf("\n\n")) !== -1) {
-          const frame = buffer.slice(0, boundary);
-          buffer = buffer.slice(boundary + 2);
-          const data = frame
-            .split("\n")
-            .filter((line) => line.startsWith("data:"))
-            .map((line) => line.slice(5).trimStart())
-            .join("\n");
-          if (data.length === 0) continue;
-          const event = asObject(JSON.parse(data) as unknown, "OpenCode SSE event");
-          if (event.type === "server.heartbeat") continue;
-          validateNativeEvent(event);
-          await this.context.recordNativeEvent("opencode", event);
-          if (event.type === "server.connected") {
-            if (connection.connected) throw new Error("OpenCode event stream connected more than once");
-            connection.connected = true;
-            connection.resolveReady?.();
-            connection.resolveReady = undefined;
-            connection.rejectReady = undefined;
-            continue;
-          }
-          if (event.type === "session.created") {
-            const info = asObject(asObject(event.properties, "OpenCode Session event").info, "OpenCode Session info");
-            if (info.parentID !== undefined && info.directory === this.workspacePath) {
-              this.rememberParent(
-                requireString(info.id, "OpenCode Session id"),
-                requireString(info.parentID, "OpenCode parent Session id"),
-              );
-            }
-          }
-          const sessionId = eventSessionId(event);
-          if (!sessionId) continue;
-          const direct = this.#listeners.get(sessionId);
-          if (direct?.size) {
-            for (const listener of [...direct]) listener.receive(event);
-          } else if (
-            event.type === "permission.asked" || event.type === "permission.replied" ||
-            event.type === "question.asked" || event.type === "question.replied" || event.type === "question.rejected"
-          ) {
-            let ancestor = this.#parents.get(sessionId);
-            while (ancestor !== undefined) {
-              const listeners = this.#listeners.get(ancestor);
-              if (listeners?.size) {
-                for (const listener of [...listeners]) {
-                  if (listener.includeDescendants) listener.receive(event);
-                }
-                break;
-              }
-              ancestor = this.#parents.get(ancestor);
-            }
+      for await (const inbound of this.client.event.subscribe({ signal })) {
+        const event = asObject(inbound, "OpenCode v2 event");
+        if (event.type === "server.heartbeat") continue;
+        validateNativeEvent(event);
+        const location = isObject(event.location) ? event.location.directory : undefined;
+        if (location !== undefined && location !== this.workspacePath) continue;
+        await this.context.recordNativeEvent("opencode", redactFormDiagnostic(event));
+        if (event.type === "server.connected") {
+          if (connection.connected) throw new Error("OpenCode event stream connected more than once");
+          connection.connected = true;
+          connection.resolveReady?.();
+          connection.resolveReady = undefined;
+          connection.rejectReady = undefined;
+          continue;
+        }
+        if (event.type === "session.created") {
+          const data = asObject(event.data, "OpenCode v2 Session event");
+          if (data.parentID !== undefined && location === this.workspacePath) {
+            this.rememberParent(requireString(data.sessionID, "OpenCode Session id"),
+              requireString(data.parentID, "OpenCode parent Session id"));
           }
         }
+        const recipients = this.#captureRecipients(event);
+        for (const receive of recipients) receive(event);
       }
       if (!signal.aborted) throw new Error("OpenCode event stream ended");
     } catch (error) {
@@ -782,6 +698,48 @@ class WorkspaceEventStream {
       }
     }
   }
+
+  #captureRecipients(event: JsonObject): readonly ((event: JsonObject) => void)[] {
+    const sessionId = eventSessionId(event);
+    if (sessionId === undefined) return [];
+    const direct = this.#listeners.get(sessionId);
+    const recipients = direct ? [...direct].map(listener => listener.receive) : [];
+    let ancestor = this.#parents.get(sessionId);
+    while (ancestor !== undefined) {
+      const listeners = this.#listeners.get(ancestor);
+      if (listeners?.size) recipients.push(...[...listeners]
+        .filter(listener => listener.includeDescendants).map(listener => listener.receive));
+      ancestor = this.#parents.get(ancestor);
+    }
+    return recipients;
+  }
+}
+
+function redactFormDiagnostic(event: JsonObject): JsonObject {
+  if (event.type === "form.replied") {
+    const data = event.data;
+    if (!isObject(data)) return event;
+    return { ...event, data: { ...data, ...(data.answer === undefined ? {} : { answer: "[redacted]" }) } };
+  }
+  if (event.type !== "form.created") return event;
+  const data = event.data;
+  if (!isObject(data) || !isObject(data.form)) return event;
+  const form = data.form;
+  const fields = Array.isArray(form.fields) ? form.fields : [];
+  const hidden = new Set(fields.flatMap((value) =>
+    isObject(value) && value.hidden === true && typeof value.key === "string" ? [value.key] : []));
+  return { ...event, data: { ...data, form: { ...form,
+    ...(form.metadata === undefined ? {} : { metadata: "[redacted]" }),
+    fields: fields.map((value) => {
+      if (!isObject(value)) return value;
+      const conditions = Array.isArray(value.when) ? value.when.map((entry) =>
+        isObject(entry) && typeof entry.key === "string" && hidden.has(entry.key)
+          ? { ...entry, value: "[redacted]" } : entry) : value.when;
+      return { ...value,
+        ...(value.hidden === true && value.default !== undefined ? { default: "[redacted]" } : {}),
+        ...(conditions === undefined ? {} : { when: conditions }) };
+    }),
+  } } };
 }
 
 class OpenCodeSession implements AdapterSession {
@@ -793,7 +751,7 @@ class OpenCodeSession implements AdapterSession {
     readonly process: OpenCodeProcess,
     readonly stream: WorkspaceEventStream,
     readonly nativeSessionId: string,
-    readonly autoApprove: boolean,
+    readonly approvalPolicy: AdapterCreateSessionOptions["approvalPolicy"],
     model: string | undefined,
     effort: string | undefined = undefined,
   ) {
@@ -801,16 +759,26 @@ class OpenCodeSession implements AdapterSession {
     this.#effort = effort;
   }
 
-  get model(): string | undefined { return this.#model; }
-  get effort(): string | undefined { return this.#effort; }
-  get closed(): boolean { return this.#closed; }
+  get model(): string | undefined {
+    return this.#model;
+  }
+
+  get effort(): string | undefined {
+    return this.#effort;
+  }
+
+  get closed(): boolean {
+    return this.#closed;
+  }
 
   get modelPair(): { providerID: string; modelID: string } | undefined {
     if (this.#model === undefined) return undefined;
     return parseOpenCodeModel(this.#model);
   }
 
-  get variant(): string | undefined { return this.#effort; }
+  get variant(): string | undefined {
+    return this.#effort;
+  }
 
   updateModel(providerID: string, modelID: string): void {
     this.#model = `${providerID}/${modelID}`;
@@ -828,13 +796,21 @@ class OpenCodeSession implements AdapterSession {
 
   async setModel(model: string): Promise<void> {
     await this.stream.ensureConnected();
-    this.#model = await this.process.validateModel(model, "setModel", this.stream.workspacePath);
+    const selectedModel = await this.process.validateModel(model, "setModel", this.stream.workspacePath);
+    // Validation uses a separate HTTP request: the stream may have been lost
+    // while that request was pending. Confirm readiness before committing.
+    await this.stream.ensureConnected();
+    await this.process.selectModel(this.nativeSessionId, selectedModel, undefined, "setModel");
+    this.#model = selectedModel;
     this.#effort = undefined;
   }
 
   async setEffort(effort: string): Promise<void> {
     await this.stream.ensureConnected();
     await this.process.validateEffort(effort, this.#model, "setEffort", this.stream.workspacePath);
+    await this.stream.ensureConnected();
+    if (this.#model === undefined) throw protocolFailure("OpenCode v2 Effort requires a selected Model");
+    await this.process.selectModel(this.nativeSessionId, this.#model, effort, "setEffort");
     this.#effort = effort;
   }
 
@@ -858,9 +834,10 @@ class OpenCodeTurnCapture implements AdapterTurn {
   readonly #nonAssistantMessageIds = new Set<string>();
   readonly #tools = new Map<string, OpenCodeToolRecord>();
   readonly #toolPartsByMessage = new Map<string, Map<string, string>>();
-  readonly #questions = new Map<string, readonly AdapterQuestionItem[]>();
+  readonly #questions = new Map<string, readonly AdapterLegacyQuestionItem[]>();
   readonly #locallyResolvedPermissions = new Set<string>();
   readonly #locallyResolvedQuestions = new Set<string>();
+  readonly #usage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cachedInputTokens: 0 };
   #unsubscribe: (() => void) | undefined;
   #accepted = false;
   #started = false;
@@ -873,9 +850,18 @@ class OpenCodeTurnCapture implements AdapterTurn {
     readonly properties: JsonObject;
   } | undefined;
 
-  constructor(readonly process: OpenCodeProcess, readonly session: OpenCodeSession) {}
-  attach(unsubscribe: () => void): void { this.#unsubscribe = unsubscribe; }
-  accept(): void { this.#accepted = true; }
+  constructor(
+    readonly process: OpenCodeProcess,
+    readonly session: OpenCodeSession,
+  ) {}
+
+  attach(unsubscribe: () => void): void {
+    this.#unsubscribe = unsubscribe;
+  }
+
+  accept(): void {
+    this.#accepted = true;
+  }
 
   receive(event: JsonObject): void {
     if (this.#disposed) return;
@@ -884,7 +870,10 @@ class OpenCodeTurnCapture implements AdapterTurn {
         const properties = asObject(event.properties, "OpenCode protocol error");
         if (properties.disconnect === true) {
           this.session.closeAfterStreamFailure();
-          void this.process.abortTurn(this.session.stream.workspacePath, this.session.nativeSessionId).catch(() => undefined);
+          void this.process.abortTurn(
+            this.session.stream.workspacePath,
+            this.session.nativeSessionId,
+          ).catch(() => undefined);
         }
         this.#push({
           type: "adapter.protocolError",
@@ -926,20 +915,25 @@ class OpenCodeTurnCapture implements AdapterTurn {
         if (time.completed !== undefined && !message.completed) {
           const tokens = asObject(info.tokens, "OpenCode Assistant Message tokens");
           const cache = asObject(tokens.cache, "OpenCode cache tokens");
+          // Native tokens describe this model step. Muha usage describes the
+          // current Turn; message.completed gates duplicate terminal snapshots.
+          this.#usage.inputTokens += requireTokenCount(tokens.input, "input");
+          this.#usage.outputTokens += requireTokenCount(tokens.output, "output");
+          this.#usage.reasoningTokens += requireTokenCount(tokens.reasoning, "reasoning");
+          this.#usage.cachedInputTokens += requireTokenCount(cache.read, "cached input");
           this.#push({
             type: "usage.updated",
-            usage: {
-              inputTokens: requireTokenCount(tokens.input, "input"),
-              outputTokens: requireTokenCount(tokens.output, "output"),
-              reasoningTokens: requireTokenCount(tokens.reasoning, "reasoning"),
-              cachedInputTokens: requireTokenCount(cache.read, "cached input"),
-            },
+            usage: { ...this.#usage },
           });
           message.completed = true;
           this.#completedAssistantCount += 1;
           const text = message.textPartOrder.map((partId) => message?.parts.get(partId)?.text ?? "").join("");
           this.#lastCompletedAssistantText = text;
-          this.#push({ type: "assistant.message.completed", nativeMessageId: messageId, text });
+          this.#push({
+            type: "assistant.message.completed",
+            nativeMessageId: messageId,
+            text,
+          });
         }
         return;
       }
@@ -963,12 +957,8 @@ class OpenCodeTurnCapture implements AdapterTurn {
           title: `OpenCode requests ${permission} permission`,
           ...(patterns.length === 0 ? {} : { description: patterns.join("\n") }),
           ...(tool === undefined ? {} : this.#toolReference(tool, "OpenCode permission Tool")),
-          details: {
-            permission,
-            patterns,
-            metadata,
-            ...(properties.sessionID === this.session.nativeSessionId ? {} : { nativeSessionId: properties.sessionID }),
-          },
+          details: { permission, patterns, metadata,
+            ...(properties.sessionID === this.session.nativeSessionId ? {} : { nativeSessionId: properties.sessionID }) },
         });
         return;
       }
@@ -1031,12 +1021,18 @@ class OpenCodeTurnCapture implements AdapterTurn {
           type: "turn.failed",
           error: {
             code: "HARNESS_ERROR",
-            message: nativeMessage === undefined ? "OpenCode Turn failed" : `OpenCode Turn failed: ${nativeMessage}`,
+            message: nativeMessage === undefined
+              ? "OpenCode Turn failed"
+              : `OpenCode Turn failed: ${nativeMessage}`,
             harness: "opencode",
             operation: "startTurn",
             command: "opencode",
-            ...(typeof nativeError.name === "string" && nativeError.name.length > 0 ? { nativeCode: nativeError.name } : {}),
-            ...(typeof nativeData.isRetryable === "boolean" ? { retryable: nativeData.isRetryable } : {}),
+            ...(typeof nativeError.name === "string" && nativeError.name.length > 0
+              ? { nativeCode: nativeError.name }
+              : {}),
+            ...(typeof nativeData.isRetryable === "boolean"
+              ? { retryable: nativeData.isRetryable }
+              : {}),
           },
         });
         this.dispose();
@@ -1090,7 +1086,9 @@ class OpenCodeTurnCapture implements AdapterTurn {
       this.#interrupting = false;
       const pendingTerminal = this.#pendingInterruptTerminal;
       this.#pendingInterruptTerminal = undefined;
-      if (pendingTerminal !== undefined && !this.#disposed) this.receive(pendingTerminal);
+      if (pendingTerminal !== undefined && !this.#disposed) {
+        this.receive(pendingTerminal);
+      }
       throw error;
     }
     this.#interrupting = false;
@@ -1245,7 +1243,11 @@ class OpenCodeTurnCapture implements AdapterTurn {
       const terminal = this.#terminalToolState(status, state)!;
       tool.completed = true;
       tool.terminalState = state;
-      this.#push({ type: "tool.completed", nativeToolCallId: partId, ...terminal });
+      this.#push({
+        type: "tool.completed",
+        nativeToolCallId: partId,
+        ...terminal,
+      });
       return;
     }
     throw new Error("OpenCode Tool status is unsupported");
@@ -1288,15 +1290,18 @@ class AsyncQueue<T> implements AsyncIterable<T> {
   readonly #values: T[] = [];
   readonly #waiters: Array<(result: IteratorResult<T>) => void> = [];
   #ended = false;
+
   push(value: T): void {
     const waiter = this.#waiters.shift();
     if (waiter) waiter({ value, done: false });
     else this.#values.push(value);
   }
+
   end(): void {
     this.#ended = true;
     for (const waiter of this.#waiters.splice(0)) waiter({ value: undefined, done: true });
   }
+
   [Symbol.asyncIterator](): AsyncIterator<T> {
     return {
       next: () => {
@@ -1309,7 +1314,7 @@ class AsyncQueue<T> implements AsyncIterable<T> {
   }
 }
 
-function mapOpenCodeQuestionItem(value: unknown): AdapterQuestionItem {
+export function mapOpenCodeQuestionItem(value: unknown): AdapterLegacyQuestionItem {
   const item = asObject(value, "OpenCode Question item");
   const header = requireString(item.header, "OpenCode Question header", true);
   const question = requireString(item.question, "OpenCode Question text");
@@ -1331,7 +1336,7 @@ function mapOpenCodeQuestionItem(value: unknown): AdapterQuestionItem {
   };
 }
 
-function assertUniqueQuestionLabels(questions: readonly AdapterQuestionItem[]): void {
+export function assertUniqueQuestionLabels(questions: readonly AdapterLegacyQuestionItem[]): void {
   for (const question of questions) {
     const labels = new Set<string>();
     for (const option of question.options) {
@@ -1341,9 +1346,9 @@ function assertUniqueQuestionLabels(questions: readonly AdapterQuestionItem[]): 
   }
 }
 
-function mapOpenCodeQuestionAnswers(
+export function mapOpenCodeQuestionAnswers(
   value: unknown,
-  questions: readonly AdapterQuestionItem[],
+  questions: readonly AdapterLegacyQuestionItem[],
 ): readonly AdapterQuestionAnswer[] {
   if (!Array.isArray(value) || value.length !== questions.length) {
     throw new Error("OpenCode Question reply must answer every item");
@@ -1368,15 +1373,18 @@ function mapOpenCodeQuestionAnswers(
   });
 }
 
-function mapQuestionResponseToOpenCode(
+export function mapQuestionResponseToOpenCode(
   answers: readonly AdapterQuestionAnswer[],
-  questions: readonly AdapterQuestionItem[],
+  questions: readonly AdapterLegacyQuestionItem[],
 ): readonly string[][] {
   return answers.map((answer) => {
     const question = questions[answer.questionIndex];
     if (!question) throw protocolFailure("OpenCode Question answer index is invalid");
     if (answer.kind === "skipped") return [];
     if (answer.kind === "custom") return [answer.text];
+    if (answer.kind !== "options" && answer.kind !== "optionsWithCustom") {
+      throw protocolFailure("OpenCode Question answer kind is unsupported");
+    }
     const labels = answer.optionIndexes.map((index) => {
       const option = question.options[index];
       if (!option) throw protocolFailure("OpenCode Question option index is invalid");
@@ -1396,18 +1404,25 @@ async function validateSession(
     throw protocolFailure("OpenCode Session id must be a non-empty string");
   }
   const id = session.id;
-  if (typeof session.directory !== "string" || !isAbsolute(session.directory)) {
+  const directory = isObject(session.location) ? session.location.directory : session.directory;
+  if (typeof directory !== "string" || !isAbsolute(directory)) {
     throw protocolFailure("OpenCode Session directory must be an absolute path");
   }
   let nativeWorkspacePath: string;
   try {
-    nativeWorkspacePath = await realpath(session.directory);
+    nativeWorkspacePath = await realpath(directory);
   } catch {
     throw protocolFailure("OpenCode Session directory cannot be canonicalized");
   }
-  if (nativeWorkspacePath !== workspacePath) throw protocolFailure("OpenCode Session belongs to a different Workspace");
-  const title = typeof session.title === "string" && session.title.length > 0 ? session.title : undefined;
-  if (session.title !== undefined && typeof session.title !== "string") throw protocolFailure("OpenCode Session title must be a string");
+  if (nativeWorkspacePath !== workspacePath) {
+    throw protocolFailure("OpenCode Session belongs to a different Workspace");
+  }
+  const title = typeof session.title === "string" && session.title.length > 0
+    ? session.title
+    : undefined;
+  if (session.title !== undefined && typeof session.title !== "string") {
+    throw protocolFailure("OpenCode Session title must be a string");
+  }
   let createdAt: string | undefined;
   let updatedAt: string | undefined;
   if (session.time !== undefined) {
@@ -1428,12 +1443,17 @@ async function validateListedSession(
   workspacePath: string,
 ): Promise<Awaited<ReturnType<typeof validateSession>> | undefined> {
   if (!isObject(value)) throw protocolFailure("OpenCode Session response must be an object");
-  if (typeof value.directory !== "string" || !isAbsolute(value.directory)) throw protocolFailure("OpenCode Session directory must be an absolute path");
+  const directory = isObject(value.location) ? value.location.directory : value.directory;
+  if (typeof directory !== "string" || !isAbsolute(directory)) {
+    throw protocolFailure("OpenCode Session directory must be an absolute path");
+  }
   let nativeWorkspacePath: string;
   try {
-    nativeWorkspacePath = await realpath(value.directory);
+    nativeWorkspacePath = await realpath(directory);
   } catch {
-    if (value.directory === workspacePath) throw protocolFailure("OpenCode Session directory cannot be canonicalized");
+    if (directory === workspacePath) {
+      throw protocolFailure("OpenCode Session directory cannot be canonicalized");
+    }
     return undefined;
   }
   if (nativeWorkspacePath !== workspacePath) return undefined;
@@ -1456,7 +1476,9 @@ async function mapTurnInput(input: AdapterTurnInput): Promise<JsonObject> {
     throw harnessCommandFailure("startTurn", "OpenCode image file became unreadable", "image_unreadable");
   }
   const mime = detectImageMediaType(bytes);
-  if (mime === undefined) throw harnessCommandFailure("startTurn", "OpenCode image file changed after validation", "image_invalid");
+  if (mime === undefined) {
+    throw harnessCommandFailure("startTurn", "OpenCode image file changed after validation", "image_invalid");
+  }
   return {
     type: "file",
     mime,
@@ -1466,9 +1488,15 @@ async function mapTurnInput(input: AdapterTurnInput): Promise<JsonObject> {
 }
 
 function detectImageMediaType(bytes: Uint8Array): "image/png" | "image/jpeg" | "image/webp" | "image/gif" | undefined {
-  if (bytes.length >= 8 && Buffer.from(bytes.subarray(0, 8)).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
+  if (bytes.length >= 8 && Buffer.from(bytes.subarray(0, 8)).equals(
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+  )) return "image/png";
   if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
-  if (bytes.length >= 12 && Buffer.from(bytes.subarray(0, 4)).toString("ascii") === "RIFF" && Buffer.from(bytes.subarray(8, 12)).toString("ascii") === "WEBP") return "image/webp";
+  if (
+    bytes.length >= 12 &&
+    Buffer.from(bytes.subarray(0, 4)).toString("ascii") === "RIFF" &&
+    Buffer.from(bytes.subarray(8, 12)).toString("ascii") === "WEBP"
+  ) return "image/webp";
   if (bytes.length >= 6) {
     const signature = Buffer.from(bytes.subarray(0, 6)).toString("ascii");
     if (signature === "GIF87a" || signature === "GIF89a") return "image/gif";
@@ -1487,9 +1515,51 @@ function parseOpenCodeModel(model: string): { providerID: string; modelID: strin
   return { providerID: model.slice(0, slash), modelID: model.slice(slash + 1) };
 }
 
+function toV2ModelRef(
+  model: string,
+  effort: string | undefined,
+): { readonly providerID: string; readonly id: string; readonly variant?: string } {
+  const pair = parseOpenCodeModel(model);
+  return {
+    providerID: pair.providerID,
+    id: pair.modelID,
+    ...(effort === undefined ? {} : { variant: effort }),
+  };
+}
+
+function assertSelectedV2Model(value: unknown, model: string, effort: string | undefined): void {
+  const info = asObjectProtocol(value, "OpenCode v2 Session");
+  const actual = asObjectProtocol(info.model, "OpenCode v2 selected Model");
+  const expected = toV2ModelRef(model, effort);
+  if (
+    actual.providerID !== expected.providerID ||
+    actual.id !== expected.id ||
+    (effort !== undefined && actual.variant !== effort)
+  ) throw protocolFailure("OpenCode v2 selected a different Model or Effort");
+}
+
+function selectedV2Model(value: unknown): { readonly model: string; readonly effort?: string } | undefined {
+  const session = asObjectProtocol(value, "OpenCode v2 Session");
+  if (session.model === undefined || session.model === null) return undefined;
+  const selected = asObjectProtocol(session.model, "OpenCode v2 selected Model");
+  const providerID = requireProtocolString(selected.providerID, "OpenCode v2 selected provider");
+  const id = requireProtocolString(selected.id, "OpenCode v2 selected Model id");
+  const effort = selected.variant;
+  if (effort !== undefined && (typeof effort !== "string" || effort.length === 0)) {
+    throw protocolFailure("OpenCode v2 selected Variant is invalid");
+  }
+  return { model: joinOpenCodeModel(providerID, id),
+    ...(effort === undefined ? {} : { effort: effort as string }) };
+}
+
 function joinOpenCodeModel(providerID: string, modelID: string): string {
   const value = `${providerID}/${modelID}`;
-  if (providerID.length === 0 || providerID.includes("/") || modelID.length === 0 || value !== value.trim()) {
+  if (
+    providerID.length === 0 ||
+    providerID.includes("/") ||
+    modelID.length === 0 ||
+    value !== value.trim()
+  ) {
     throw protocolFailure("OpenCode Session model pair cannot be encoded losslessly");
   }
   return value;
@@ -1501,12 +1571,16 @@ function asObjectProtocol(value: unknown, description: string): JsonObject {
 }
 
 function requireProtocolString(value: unknown, description: string): string {
-  if (typeof value !== "string" || value.length === 0) throw protocolFailure(`${description} must be a non-empty string`);
+  if (typeof value !== "string" || value.length === 0) {
+    throw protocolFailure(`${description} must be a non-empty string`);
+  }
   return value;
 }
 
 function unixMillisecondsToRfc3339(value: unknown, description: string): string {
-  if (!Number.isSafeInteger(value) || (value as number) < 0) throw protocolFailure(`OpenCode Session ${description} time must be milliseconds`);
+  if (!Number.isSafeInteger(value) || (value as number) < 0) {
+    throw protocolFailure(`OpenCode Session ${description} time must be milliseconds`);
+  }
   try {
     return new Date(value as number).toISOString();
   } catch {
@@ -1515,41 +1589,62 @@ function unixMillisecondsToRfc3339(value: unknown, description: string): string 
 }
 
 function validateNativeEvent(event: JsonObject): void {
-  requireString(event.id, "OpenCode event id");
   requireString(event.type, "OpenCode event type");
-  asObject(event.properties, "OpenCode event properties");
+  asObject(event.data, "OpenCode v2 event data");
 }
 
 function eventSessionId(event: JsonObject): string | undefined {
-  if (!isObject(event.properties)) return undefined;
-  if (typeof event.properties.sessionID === "string") return event.properties.sessionID;
-  if (isObject(event.properties.info) && typeof event.properties.info.sessionID === "string") return event.properties.info.sessionID;
-  if (isObject(event.properties.part) && typeof event.properties.part.sessionID === "string") return event.properties.part.sessionID;
+  if (!isObject(event.data)) return undefined;
+  if (typeof event.data.sessionID === "string") return event.data.sessionID;
+  if (isObject(event.data.form) && typeof event.data.form.sessionID === "string") return event.data.form.sessionID;
   return undefined;
+}
+
+function v2Permissions(policy: AdapterCreateSessionOptions["approvalPolicy"]):
+  readonly { readonly action: string; readonly resource: string; readonly effect: "allow" | "deny" | "ask" }[] | undefined {
+  if (policy === "harnessManaged") return undefined;
+  return [{ action: "*", resource: "*", effect: policy === "autoApprove" ? "allow" :
+    policy === "autoDeny" ? "deny" : "ask" }];
 }
 
 function asObject(value: unknown, description: string): JsonObject {
   if (!isObject(value)) throw new Error(`Invalid ${description}`);
   return value;
 }
+
 function isObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+
 function requireString(value: unknown, description: string, allowEmpty = false): string {
-  if (typeof value !== "string" || (!allowEmpty && value.length === 0)) throw new Error(`Invalid ${description}`);
+  if (typeof value !== "string" || (!allowEmpty && value.length === 0)) {
+    throw new Error(`Invalid ${description}`);
+  }
   return value;
 }
+
 function requireStringArray(value: unknown, description: string): string[] {
-  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) throw new Error(`Invalid ${description}`);
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) {
+    throw new Error(`Invalid ${description}`);
+  }
   return value;
 }
+
 function requireTokenCount(value: unknown, description: string): number {
-  if (!Number.isSafeInteger(value) || (value as number) < 0) throw new Error(`Invalid OpenCode ${description} token count`);
+  if (!Number.isSafeInteger(value) || (value as number) < 0) {
+    throw new Error(`Invalid OpenCode ${description} token count`);
+  }
   return value as number;
 }
-function protocolFailure(message: string): { readonly code: "ADAPTER_PROTOCOL_ERROR"; readonly message: string; readonly harness: "opencode" } {
+
+function protocolFailure(message: string): {
+  readonly code: "ADAPTER_PROTOCOL_ERROR";
+  readonly message: string;
+  readonly harness: "opencode";
+} {
   return { code: "ADAPTER_PROTOCOL_ERROR", message, harness: "opencode" };
 }
+
 function harnessCommandFailure(
   operation: HarnessErrorData["operation"],
   message: string,
@@ -1564,12 +1659,21 @@ function harnessCommandFailure(
     ...(nativeCode === undefined ? {} : { nativeCode }),
   };
 }
+
 function normalizeSessionLookupFailure(error: unknown): unknown {
-  if (typeof error === "object" && error !== null && "code" in error && error.code === "HARNESS_ERROR" && "nativeCode" in error && error.nativeCode === "http_404") {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "HARNESS_ERROR" &&
+    "nativeCode" in error &&
+    error.nativeCode === "http_404"
+  ) {
     return { ...error, nativeCode: "session_not_found" };
   }
   return error;
 }
+
 function failure(
   operation: HarnessErrorData["operation"],
   stage: NonNullable<HarnessErrorData["stage"]>,
@@ -1585,46 +1689,7 @@ function failure(
     stage,
   };
 }
-function normalizeHarnessFailure(error: unknown, operation: HarnessErrorData["operation"], stage: NonNullable<HarnessErrorData["stage"]>): HarnessErrorData {
-  if (isObject(error) && error.code === "HARNESS_ERROR") return error as unknown as HarnessErrorData;
-  return failure(operation, stage, error);
-}
+
 function isEventStoreError(error: unknown): boolean {
   return isObject(error) && error.code === "EVENT_STORE_ERROR";
-}
-function waitForExit(child: ChildProcessWithoutNullStreams): Promise<void> {
-  if (hasExited(child)) return Promise.resolve();
-  return new Promise((resolve) => child.once("exit", () => resolve()));
-}
-function hasExited(child: ChildProcessWithoutNullStreams): boolean {
-  return child.exitCode !== null || child.signalCode !== null;
-}
-async function withTimeout<T>(operation: Promise<T>, milliseconds: number, createError: () => HarnessErrorData): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    return await Promise.race([
-      operation,
-      new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(createError()), milliseconds); }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-async function exitsWithin(child: ChildProcessWithoutNullStreams, milliseconds: number): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    return await Promise.race([
-      waitForExit(child).then(() => true),
-      new Promise<false>((resolve) => { timer = setTimeout(() => resolve(false), milliseconds); }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-function signalProcessGroup(pid: number, signal: NodeJS.Signals): void {
-  try {
-    process.kill(-pid, signal);
-  } catch (error) {
-    if (!isObject(error) || error.code !== "ESRCH") throw failure("closeHarness", "shutdown", error);
-  }
 }

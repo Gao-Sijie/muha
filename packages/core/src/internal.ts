@@ -4,6 +4,7 @@ import type {
 } from "./index.js";
 import { MuhaError } from "./errors.js";
 import type { HarnessErrorData } from "./errors.js";
+import type { HarnessIntegrationRoute } from "./reference.js";
 import {
   isHarnessKind,
   type HarnessKind,
@@ -21,6 +22,17 @@ export {
   type HarnessKind,
 } from "./harness-catalog.js";
 
+export { AcpSessionDriver } from "./acp/driver.js";
+export { AcpConnection } from "./acp/connection.js";
+export type {
+  AcpRouteOptions,
+  AcpHarnessBehavior,
+  AcpSessionIdentity,
+  AcpTurnSupplement,
+  AcpQuestionMapping,
+  AcpQuestionRequest,
+} from "./acp/types.js";
+
 export {
   installRuntimeSchedulerForTesting,
   type RuntimeScheduler,
@@ -37,6 +49,18 @@ export {
   type WorkspaceSkillPlanner,
   type WorkspaceWorkerInvocation,
 } from "./workspace-configurator.js";
+
+export type {
+  HarnessIntegrationRoute,
+  SessionReference,
+} from "./reference.js";
+export {
+  createSessionReference,
+  parseSessionReference,
+  serializeSessionReference,
+  referenceRoute,
+  HARNESS_INTEGRATION_ROUTES,
+} from "./reference.js";
 
 const registrationMarker = Symbol.for("@muha-sdk/core/HarnessRegistration");
 
@@ -74,6 +98,7 @@ export interface AdapterSession {
 
 export interface AdapterResumeSessionOptions extends AdapterCreateSessionOptions {
   readonly nativeSessionId: string;
+  readonly route?: HarnessIntegrationRoute;
 }
 
 export interface AdapterListedSession {
@@ -162,6 +187,7 @@ export type AdapterTurnEvent =
       readonly nativeRequestId: string;
       readonly questions: readonly AdapterQuestionItem[];
       readonly nativeToolCallId?: string;
+      readonly description?: string;
     }
   | {
       readonly type: "question.answered";
@@ -188,7 +214,7 @@ export interface AdapterQuestionOption {
   readonly description?: string;
 }
 
-export interface AdapterQuestionItem {
+export interface AdapterLegacyQuestionItem {
   readonly header?: string;
   readonly question: string;
   readonly description?: string;
@@ -196,6 +222,49 @@ export interface AdapterQuestionItem {
   readonly multiple: boolean;
   readonly allowCustom: boolean;
 }
+
+export type AdapterQuestionInput =
+  | {
+      readonly kind: "select" | "multiselect";
+      readonly options: readonly (AdapterQuestionOption & { readonly value: string })[];
+      readonly allowCustom: boolean;
+      readonly maxCustomItems?: number;
+      readonly minItems?: number;
+      readonly maxItems?: number;
+      readonly format?: "email" | "uri" | "date" | "date-time";
+      readonly minLength?: number;
+      readonly maxLength?: number;
+      readonly pattern?: string;
+      readonly placeholder?: string;
+    }
+  | {
+      readonly kind: "text";
+      readonly format?: "email" | "uri" | "date" | "date-time";
+      readonly minLength?: number;
+      readonly maxLength?: number;
+      readonly pattern?: string;
+      readonly placeholder?: string;
+    }
+  | { readonly kind: "number"; readonly integer: boolean; readonly minimum?: number; readonly maximum?: number }
+  | { readonly kind: "boolean" }
+  | { readonly kind: "external"; readonly url: string };
+
+export interface AdapterTypedQuestionItem {
+  readonly header?: string;
+  readonly question: string;
+  readonly description?: string;
+  readonly input: AdapterQuestionInput;
+  readonly required: boolean;
+  readonly hidden: boolean;
+  readonly defaultValue?: string | number | boolean | readonly string[];
+  readonly when?: readonly {
+    readonly questionIndex: number;
+    readonly op: "eq" | "neq";
+    readonly value: string | number | boolean;
+  }[];
+}
+
+export type AdapterQuestionItem = AdapterLegacyQuestionItem | AdapterTypedQuestionItem;
 
 export type AdapterQuestionAnswer =
   | { readonly questionIndex: number; readonly kind: "options"; readonly optionIndexes: readonly number[] }
@@ -206,7 +275,13 @@ export type AdapterQuestionAnswer =
       readonly optionIndexes: readonly number[];
       readonly text: string;
     }
-  | { readonly questionIndex: number; readonly kind: "skipped" };
+  | { readonly questionIndex: number; readonly kind: "skipped" }
+  | { readonly questionIndex: number; readonly kind: "selection"; readonly optionIndexes: readonly number[]; readonly customValues: readonly string[] }
+  | { readonly questionIndex: number; readonly kind: "text"; readonly text: string }
+  | { readonly questionIndex: number; readonly kind: "number"; readonly value: number }
+  | { readonly questionIndex: number; readonly kind: "boolean"; readonly value: boolean }
+  | { readonly questionIndex: number; readonly kind: "externalAcknowledged" }
+  | { readonly questionIndex: number; readonly kind: "useDefault" };
 
 export type AdapterQuestionResponse =
   | { readonly action: "answer"; readonly answers: readonly AdapterQuestionAnswer[] }
@@ -227,6 +302,14 @@ export interface AdapterTurn extends AsyncIterable<AdapterTurnEvent> {
 
 export interface LiveHarnessAdapter {
   readonly kind: HarnessKind;
+  /**
+   * The Harness Integration Route this Adapter instance fulfills behavior
+   * through. Existing native adapters declare "native"; an internal-test-bound
+   * ACP driver declares "acp". References must carry a compatible route.
+   */
+  readonly route: HarnessIntegrationRoute;
+  /** Proven explicit Reference routes only; never failure-driven fallback. */
+  readonly resumeRoutes?: readonly HarnessIntegrationRoute[];
   initialize(): Promise<void>;
   createSession(options: AdapterCreateSessionOptions): Promise<AdapterSession>;
   resumeSession(options: AdapterResumeSessionOptions): Promise<AdapterSession>;
@@ -296,8 +379,8 @@ function validateOfficialAdapterOptions(options: OfficialAdapterOptions): void {
     invalid("Official Adapter options must be an object");
   }
   const known = new Set(["env", "startupTimeoutMs", "shutdownTimeoutMs"]);
-  for (const key of Object.keys(options)) {
-    if (!known.has(key)) invalid(`Unknown Official Adapter option: ${key}`);
+  for (const key of Reflect.ownKeys(options)) {
+    if (typeof key !== "string" || !known.has(key)) invalid(`Unknown Official Adapter option: ${String(key)}`);
   }
   validateTimeout(options.startupTimeoutMs, "startupTimeoutMs");
   validateTimeout(options.shutdownTimeoutMs, "shutdownTimeoutMs");

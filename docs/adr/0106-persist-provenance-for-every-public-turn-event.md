@@ -1,0 +1,3 @@
+# Persist Provenance for Every Public Turn Event
+
+Every public Turn Event must have committed diagnostic provenance before delivery. If a Harness protocol event causes the public event, its complete unredacted Native Event Record is that provenance and Muha does not persist a duplicate normalized public-event record. If Core originates a public event without any native source—such as backpressure failure, Runtime-close interruption, or interaction invalidation—it first commits one compact private Core Event Record. Native events that produce no public event remain fully retained, and one Native Event Record may support the public transitions derived from it. The resulting SQLite database is the private Diagnostic Event Store, not a public event-replay surface.

@@ -1,5 +1,5 @@
 {
-  "name": "muha",
+  "name": "muha-monorepo",
   "version": "0.0.0-development",
   "private": true,
   "type": "module",
@@ -7,18 +7,25 @@
     "packages/core",
     "packages/codex-adapter",
     "packages/opencode-adapter",
-    "packages/kimi-adapter"
+    "packages/kimi-adapter",
+    "packages/pi-adapter",
+    "packages/agy-adapter"
   ],
   "engines": {
     "node": ">=22.20.0"
   },
   "scripts": {
-    "build": "tsc -b --pretty false",
-    "clean": "tsc -b --clean",
-    "typecheck": "tsc -b --pretty false",
-    "test": "npm run build --silent && node --test test/*.test.mjs",
+    "build": "node scripts/clean-build-outputs.mjs && tsc -b --pretty false --force && npm run build:observer --workspace @muha-sdk/codex-adapter && npm run build:native --workspace @muha-sdk/core && npm run build:native --workspace @muha-sdk/agy-adapter && npm run build:sdk --workspace @muha-sdk/pi-adapter",
+    "build:sdk": "npm run build",
+    "clean": "tsc -b --clean && node scripts/clean-build-outputs.mjs",
+    "typecheck": "tsc -b --pretty false && tsc -p test/types/tsconfig.json --pretty false",
+    "test": "npm run build --silent && node --test test/contracts/*.test.mjs test/internals/*.test.mjs && npm test --workspace @muha-sdk/pi-adapter",
+    "test:sdk": "npm test",
     "check": "npm run typecheck && npm test",
-    "pack:dry-run": "npm run build --silent && npm pack --dry-run --json --workspace @muha-sdk/core && npm pack --dry-run --json --workspace @muha-sdk/codex-adapter && npm pack --dry-run --json --workspace @muha-sdk/opencode-adapter && npm pack --dry-run --json --workspace @muha-sdk/kimi-adapter"
+    "audit:packages": "node scripts/audit-local-delivery.mjs",
+    "pack:diagnostic": "npm run build --silent && node scripts/pack-local-release.mjs",
+    "qualify:real": "npm run build:sdk --silent && node scripts/qualify-real-harness.mjs",
+    "qualify:opencode-v2:preflight": "npm run build:sdk --silent && node scripts/qualify-opencode-v2-native.mjs --preflight"
   },
   "devDependencies": {
     "@types/node": "22.20.1",

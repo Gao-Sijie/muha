@@ -2,6 +2,8 @@ export const OFFICIAL_HARNESS_KINDS = Object.freeze([
   "codex",
   "opencode",
   "kimi",
+  "pi",
+  "agy",
 ] as const);
 
 export type HarnessKind = (typeof OFFICIAL_HARNESS_KINDS)[number];

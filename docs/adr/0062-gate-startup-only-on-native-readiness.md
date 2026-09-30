@@ -1,0 +1,3 @@
+# Gate Startup Only on Native Readiness
+
+Muha V0.1 does not maintain or enforce Coding Harness minimum versions, maximum versions, tested-version allowlists, compatibility ranges, or startup capability matrices. Each configured Adapter only starts its fixed native command from `PATH` and waits for the minimal ready signal required to use that integration; spawn failure, execution failure, exit before readiness, or startup timeout becomes a typed Harness initialization failure and triggers all-or-nothing Runtime rollback. Wire messages remain runtime-validated when used and malformed native behavior remains an Adapter protocol failure, but Muha does not reject a runnable Harness merely because its version is unknown, old, new, or untested.

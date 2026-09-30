@@ -1,0 +1,36 @@
+{
+  "name": "@muha-sdk/agy-adapter",
+  "version": "0.1.13",
+  "private": true,
+  "description": "Official native AGY CLI adapter for Muha SDK.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.20.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build:native": "node scripts/build-native.mjs"
+  },
+  "sideEffects": false,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Gao-Sijie/muha.git",
+    "directory": "packages/agy-adapter"
+  },
+  "bugs": {
+    "url": "https://github.com/Gao-Sijie/muha/issues"
+  },
+  "homepage": "https://github.com/Gao-Sijie/muha/tree/main/packages/agy-adapter#readme",
+  "dependencies": {
+    "@muha-sdk/core": "0.1.13"
+  }
+}

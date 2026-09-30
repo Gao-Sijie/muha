@@ -1,0 +1,3 @@
+# Expand V0.1.2 to a Five-Package Local Release
+
+Starting with V0.1.2, a Muha Release expands from the four SDK packages to a five-package lockstep artifact set by adding Muha Orchestrator at the same SemVer. All five packages remain private, exact-versioned, checksummed local npm tarballs with no npm Registry or GitHub Release publication; SDK consumers may install only Core and their selected Adapters, while Orchestrator consumers install it with Core and all three official Adapters. This partially supersedes the four-package boundary in ADR-0111 and ADR-0112 without changing the historical V0.1.0 and V0.1.1 artifact sets or making the private monorepo root a release artifact.

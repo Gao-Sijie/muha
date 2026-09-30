@@ -1,0 +1,9 @@
+#!/usr/bin/env node
+
+if (JSON.stringify(process.argv.slice(2)) !== JSON.stringify(["models", "opencode-go", "--pure"])) {
+  process.exit(64);
+}
+if (process.env.MUHA_FAKE_OPENCODE_MODELS_EXIT !== undefined) {
+  process.exit(Number(process.env.MUHA_FAKE_OPENCODE_MODELS_EXIT));
+}
+process.stdout.write(process.env.MUHA_FAKE_OPENCODE_MODELS ?? "");

@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "composite": true, "rootDir": "src", "outDir": "dist", "tsBuildInfoFile": "../../.cache/tsbuild/pi-adapter.tsbuildinfo" },
+  "references": [{ "path": "../core" }],
+  "include": ["src/**/*.ts"]
+}

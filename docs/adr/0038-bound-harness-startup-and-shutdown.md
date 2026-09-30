@@ -1,0 +1,3 @@
+# Bound Harness startup and shutdown
+
+Each official Harness Registration accepts positive safe-integer `startupTimeoutMs` and `shutdownTimeoutMs` values, both defaulting to 60,000 milliseconds. Startup must complete the native readiness handshake within its bound or fail all-or-nothing Runtime initialization; Runtime shutdown starts every Adapter's bound concurrently, first requests native graceful interruption and closure, then forcefully reclaims the complete Muha-owned process tree after its bound, treating successful forced reclamation as a successful close. Muha exposes no separate Turn, Runtime-close, Session-idle, or Approval-wait timeout in V0.1. ADR-0108 adds a fixed, non-configurable one-hour watchdog only for Harness control-command acknowledgements.

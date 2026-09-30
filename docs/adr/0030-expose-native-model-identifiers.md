@@ -1,0 +1,3 @@
+# Expose Harness-native model identifiers
+
+Session creation and resumption accept an optional `model` string and Agent Session exposes the resolved current value when available. `AgentSession.setModel(model)` may change the Harness Model only while the handle is idle, takes effect for subsequent Turns after native success, and is not persisted by Muha; callers that need deterministic resumption pass the model again. Identifiers pass to the selected Harness without cross-Harness aliases, catalog normalization, pricing metadata, fallback, or behavioral-equivalence claims, and an unsupported identifier produces a structured Harness error.

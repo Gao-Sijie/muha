@@ -23,11 +23,21 @@ export type {
   SessionSelectionPoint,
 } from "./capabilities.js";
 
+export type { HarnessIntegrationRoute } from "./session.js";
+export {
+  parseSessionReference,
+  serializeSessionReference,
+  createSessionReference,
+  referenceRoute,
+  HARNESS_INTEGRATION_ROUTES,
+} from "./reference.js";
+
 export {
   MuhaError,
   type DataDirLockedErrorData,
   type EventStoreErrorData,
   type HarnessErrorData,
+  type InvalidSessionReferenceErrorData,
   type McpConfigurationErrorData,
   type MuhaErrorData,
   type RuntimeCloseFailedErrorData,
@@ -35,6 +45,7 @@ export {
   type SessionNotFoundErrorData,
   type SkillConfigurationErrorData,
   type UnsupportedCapabilityErrorData,
+  type UnsupportedRouteErrorData,
 } from "./errors.js";
 export {
   createMuhaRuntime,
@@ -56,10 +67,13 @@ export type {
   ApprovalDecision,
   ApprovalPolicy,
   QuestionAnswer,
+  QuestionCondition,
+  QuestionInput,
   QuestionItem,
   QuestionOption,
   QuestionRequest,
   QuestionResponse,
+  QuestionValue,
   AssistantMessage,
   ImageMediaType,
   ImageTurnContentPart,

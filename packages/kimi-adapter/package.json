@@ -1,6 +1,7 @@
 {
   "name": "@muha-sdk/kimi-adapter",
-  "version": "0.1.11",
+  "version": "0.1.13",
+  "private": true,
   "description": "Official Kimi Code adapter for Muha SDK.",
   "type": "module",
   "engines": {
@@ -12,22 +13,21 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "sideEffects": false,
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Gao-Sijie/muha.git",
+    "url": "https://github.com/Gao-Sijie/muha.git",
     "directory": "packages/kimi-adapter"
   },
   "bugs": {
     "url": "https://github.com/Gao-Sijie/muha/issues"
   },
-  "homepage": "https://github.com/Gao-Sijie/muha#readme",
-  "publishConfig": {
-    "access": "public"
-  },
+  "homepage": "https://github.com/Gao-Sijie/muha/tree/main/packages/kimi-adapter#readme",
   "dependencies": {
-    "@muha-sdk/core": "0.1.11"
+    "@muha-sdk/core": "0.1.13"
   }
 }

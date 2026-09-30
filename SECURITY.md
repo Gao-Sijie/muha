@@ -1,11 +1,18 @@
-# Security Policy
+# Security
 
-## Reporting a vulnerability
+Do not post credentials, native conversations, Diagnostic Event Stores, process
+logs or private Orchestrator resources in public issues, CI logs or artifacts.
+For suspected vulnerabilities, use GitHub private vulnerability reporting when
+available; otherwise ask the repository owner for a private reporting channel
+without including sensitive details. The migration does not configure that channel.
 
-Please do not open a public GitHub issue for a security vulnerability. Use GitHub's private security-advisory reporting flow for this repository when available.
+Muha drives authenticated local Harnesses and can execute their tools. Approval
+Policies do not create a security sandbox; use only trusted Workspaces, Skills,
+MCP configuration and native extensions. Pi patched SDK workers preserve native
+behavior and do not sandbox extensions. Diagnostic records may contain complete
+unredacted native data; retention and capacity are caller-managed.
 
-Include only the minimum information needed to reproduce the issue. Do not attach credentials, access tokens, private prompts, native Harness transcripts, or complete Muha Diagnostic Event Stores.
-
-## Diagnostic data
-
-Muha's Diagnostic Event Store can contain complete, unredacted native Harness payloads, including prompts, model output, tool input/output, file content, and provider metadata. Treat the Runtime `dataDir` as sensitive application data and protect, monitor, archive, and delete it according to your own security and retention requirements.
+Before public visibility changes, independently audit all reachable history,
+Actions logs/artifacts, licenses and governance. Before npm publication, separately
+check scope permissions, package allowlists, version/configuration and independent
+Registry installs. A private clone test is not either authorization.

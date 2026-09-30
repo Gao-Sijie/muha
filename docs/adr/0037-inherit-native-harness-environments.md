@@ -1,0 +1,3 @@
+# Inherit native Harness environments
+
+Muha V0.1 launches each local Harness with the current Node.js process environment and lets it resolve its own user-level configuration and login state; a Harness Registration may override inherited variables or delete them with `undefined`, but Muha provides no isolated home, environment allowlist, credential object, token refresh, export, or proxy layer. This preserves native local and CI behavior while keeping authentication outside the SDK, so callers that require stronger isolation must provide it at the process, operating-system user, or container boundary and treat complete Native Event Records as potentially sensitive.
