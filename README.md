@@ -19,6 +19,8 @@ not consumer delivery or Registry-install proof.
 
 Supported hosts: Node.js `>=22.20.0`, Linux x64 glibc (including matching WSL2).
 Builds require a C compiler and `readelf`; installing prebuilt packages does not.
+CI uses Ubuntu 22.04 as its qualified compiler host and rejects native artifacts
+requiring glibc above 2.28. Do not raise this ABI floor to accommodate a newer runner.
 
 ```sh
 npm ci

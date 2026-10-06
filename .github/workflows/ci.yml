@@ -9,7 +9,9 @@ permissions:
 
 jobs:
   contract:
-    runs-on: ubuntu-latest
+    # The native supervisor's frozen ABI guard is qualified with this toolchain.
+    # Newer glibc headers may emit symbols above the unchanged 2.28 floor.
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
