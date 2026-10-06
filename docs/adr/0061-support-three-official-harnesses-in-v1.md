@@ -1,3 +1,0 @@
-# Support Three Official Harnesses in V0.1
-
-Muha V0.1 supports exactly three official Coding Harness integrations: Codex, OpenCode, and Kimi Code. `HarnessKind` is the closed union `"codex" | "opencode" | "kimi"`, the lockstep official release set contains `@muha-sdk/core`, `@muha-sdk/codex-adapter`, `@muha-sdk/opencode-adapter`, and `@muha-sdk/kimi-adapter`, and Core Conformance is required only of those three Adapters. Muha V0.1 publishes no Claude Code Adapter, stub, experimental integration, Harness Kind, compatibility claim, or delivery commitment; Claude Code remains a possible post-V0.1 candidate. This supersedes ADR-0051's four-Harness set while preserving its official-only, opaque-Registration, and no-third-party-SPI boundaries.

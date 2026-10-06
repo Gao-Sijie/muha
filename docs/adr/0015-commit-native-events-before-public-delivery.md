@@ -1,3 +1,0 @@
-# Commit Diagnostic Provenance Before Public Delivery
-
-Muha treats SQLite persistence as a mandatory write-ahead boundary. A native event must be committed as a Native Event Record before any mapped Turn Event is delivered; a Core-originated public event with no native source must first be committed as a Core Event Record under ADR-0106. Native-backed events are not duplicated as normalized records. The writer commits immediately when idle and batches only records accumulated while a commit is already in progress, avoiding intentional timer-based delay. ADR-0050 supersedes the former recovery behavior: loss of reliable storage fails every active Turn and irreversibly closes the Runtime instead of waiting for in-place recovery.

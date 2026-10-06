@@ -150,8 +150,10 @@ Session modes can survive normal close or abnormal exit; close does not roll
 them back, and native CLI resume may inherit them. User and Workspace permission
 configuration is not used to implement Session policies. Existing call shapes
 and the Capability Profile shape remain valid, but permissions, Questions and
-Approval event frequency can change. See the
-[migration notes](../../docs/development/autoapprove-migration.md).
+Approval event frequency can change. Use explicit supported policies for AGY/Pi
+because Core's default is `interactive`. See the
+[qualification and limitations](../../QUALIFICATION.md). Historical local
+release formats are not the independent SDK's distribution gate.
 
 An unsupported direct operation rejects before its native action with
 `MuhaError.data.code === "UNSUPPORTED_CAPABILITY"` plus exact `harness`,
@@ -175,6 +177,6 @@ Diagnostic records contain complete, unredacted native data. V0.1 provides no en
 so storage can grow without bound. Different Harnesses are not semantically
 equivalent and Muha does not promise identical output. V0.1 explicitly does not support
 third-party Harness registration. V0.1.13 supports the five-official-Harness
-set, including Pi and AGY; the [current qualification](../../docs/testing/sdk-qualification.md)
-records source and exceptions; the [AGY qualification](../../docs/testing/sdk-qualification.md)
+set, including Pi and AGY; the [current qualification](../../QUALIFICATION.md)
+records source and exceptions; the [AGY qualification](../../QUALIFICATION.md)
 retains AGY's model-level effort N/A. No npm publication is implied.

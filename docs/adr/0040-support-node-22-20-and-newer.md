@@ -1,3 +1,0 @@
-# Support Node.js 22.20 and newer
-
-Every Muha V0.1 package declares `engines.node` as `>=22.20.0` without an upper bound and rejects an older or non-Node runtime during Runtime creation with `UNSUPPORTED_RUNTIME`; odd-numbered and future Node.js majors are allowed rather than preemptively blocked, but this range is an admission rule rather than a claim that every future release has been certified. CI runs the full contract suite on the minimum supported Node.js version and the latest active LTS release, plus a smoke suite on the current release, and any future incompatibility must be addressed as a defect or by a separately justified compatibility decision.

@@ -3,7 +3,7 @@
 The first functional version was accepted against source
 `8fa1a52aee74200e11c39e91c1ac7650bf31e1c4`. The migration source document baseline
 is `1c59b2d48f14ba508d3dafb93bb2e4455cdba6a1`; runtime files are unchanged.
-[Sorted SHA256 manifest](sdk-runtime-sha256.json) maps the six packages only.
+[Sorted SHA256 manifest](scripts/fixtures/sdk-runtime-sha256.json) maps the six packages only.
 The former whole packages-tree fingerprint included private Orchestrator and
 cannot identify this SDK tree. Raw evidence is retained privately.
 

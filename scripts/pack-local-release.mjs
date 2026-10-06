@@ -114,7 +114,7 @@ try {
     .sort();
   const filenames = Object.fromEntries(packages.map(({ name, filename }) => [name, filename]));
   const readmeTemplate = await readFile(
-    join(repositoryRoot, "docs", "development", "local-release-README.template.md"),
+    join(repositoryRoot, "scripts", "templates", "local-release-README.template.md"),
     "utf8",
   );
   const readme = renderTemplate(readmeTemplate, {

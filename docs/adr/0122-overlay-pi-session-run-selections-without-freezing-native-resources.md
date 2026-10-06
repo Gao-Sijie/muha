@@ -1,3 +1,0 @@
-# Overlay Pi Session run selections without freezing native resources
-
-The Pi Adapter keeps a native SettingsManager for configuration and resource management, but its public model/provider, thinking-level and retry setters apply process-local overrides instead of writing persistent defaults; reload first reads native settings and then reapplies these run selections, with whole-execution retry kept disabled for Core ownership. Other native settings operations retain their native backend, so authorized tools and extensions can install resources or edit configuration and have native reload discover them, unlike a permanent in-memory snapshot. Native Session history and authentication persistence remain SDK-owned and are not rolled back when the Muha handle closes.

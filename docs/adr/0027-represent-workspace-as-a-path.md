@@ -1,3 +1,0 @@
-# Represent Workspace as a path, not an object
-
-Workspace remains the domain boundary that owns project-scoped Skills and MCP configuration, but Muha represents it publicly only as a normalized absolute `workspacePath`, not as an object or lifecycle resource. Runtime exposes repeatable `configureWorkspace` for optional directory creation and best-effort configuration, `createSession` accepts an existing directory path without configuring it and exposes that immutable path on the Session, and `resumeSession` reuses the path already bound to the native Session; this keeps later Workspace configuration discoverable without inventing object identity or ownership.

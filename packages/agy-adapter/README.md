@@ -3,7 +3,7 @@
 The stage-five AGY CLI Adapter for Muha SDK. It uses the caller-installed and
 authenticated `agy` command on `PATH`; it never installs AGY or falls back to an
 SDK or API integration. The current first-version qualification uses Claude
-Sonnet 4.6; see the [acceptance results](../../docs/testing/sdk-qualification.md).
+Sonnet 4.6; see the [acceptance results](../../QUALIFICATION.md).
 
 ```js
 import { createMuhaRuntime } from "@muha-sdk/core";

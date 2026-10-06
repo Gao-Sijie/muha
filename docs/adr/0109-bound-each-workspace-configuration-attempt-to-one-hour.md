@@ -1,3 +1,0 @@
-# Bound Each Workspace Configuration Attempt to One Hour
-
-Every selected-Harness × Skill-source and selected-Harness × MCP-server Workspace configuration attempt has a fixed internal one-hour watchdog with no public option. On expiry, Core reclaims the complete process tree started for that attempt, reports its existing Skill or MCP configuration failure, and continues later attempts in deterministic order. Because Workspace configuration is intentionally best-effort and external files remain native-authoritative, an attempt timeout does not close the Runtime and does not roll back earlier successes or partial native writes made before expiry.

@@ -1,3 +1,0 @@
-# Use a Minimal Core-Sequenced Turn Event Envelope
-
-Every public `TurnEvent` contains exactly the common envelope `type: TurnEventType`, Core-generated `turnId: string`, positive safe-integer `sequence`, and UTC RFC 3339 `timestamp`. Sequence starts at one and increases contiguously within each Turn and is the sole ordering authority; Core records the timestamp when it observes the native event or produces a Core event, so timestamps need not be unique or monotonic. Fine-grained events do not repeat Harness Kind, Session Reference, Workspace path, or native identifiers, and callers multiplexing Handles attach that Session context themselves. Native event IDs remain private Native Event Record data.

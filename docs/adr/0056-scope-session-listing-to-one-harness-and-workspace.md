@@ -1,3 +1,0 @@
-# Scope Session listing to one Harness and Workspace
-
-`MuhaRuntime.listSessions` requires one enabled Harness Kind and one absolute `workspacePath`, returns every native Session that Harness reports for the exact Workspace even when the directory no longer exists, and returns an empty array when none exist. Muha exposes no cross-Harness listing, pagination, cursor, limit, search, time filter, or normalized sorting in V0.1 and preserves the Harness's native order without making it portable; every entry must convert to a valid Session Reference, so malformed native identity is an Adapter protocol error rather than a silently skipped row.

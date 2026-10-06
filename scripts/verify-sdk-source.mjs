@@ -4,7 +4,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
 const [rootArgument = new URL('../', import.meta.url).pathname,
-  manifestArgument = new URL('../docs/testing/sdk-runtime-sha256.json', import.meta.url).pathname] = process.argv.slice(2);
+  manifestArgument = new URL('./fixtures/sdk-runtime-sha256.json', import.meta.url).pathname] = process.argv.slice(2);
 const root = resolve(rootArgument);
 const manifest = JSON.parse(await readFile(manifestArgument, 'utf8'));
 const resources = [];

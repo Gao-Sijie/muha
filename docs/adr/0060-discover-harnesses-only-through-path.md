@@ -1,3 +1,0 @@
-# Discover Harnesses Only Through PATH
-
-Every official Adapter starts its Harness by the integration's fixed standard executable name resolved through the Adapter process's effective `PATH`, without a shell. Muha V0.1 exposes no `executablePath`, command, binary, argument, package-manager, or alternate-location option; it does not scan common installation directories or invoke npm, npx, pnpm, bun, or another installer or resolver. A command that cannot be resolved from `PATH`, cannot be executed, exits before its basic ready state, or exceeds the startup bound is a configured Harness initialization failure under ADR-0059; Muha performs no separate version-range or capability-matrix admission check.

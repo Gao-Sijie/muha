@@ -1,3 +1,0 @@
-# Support only Linux x64 glibc in V0.1
-
-Muha V0.1 officially supports only Node.js processes reporting Linux, x64, and glibc, including WSL2 environments that run Node, Harnesses, and Workspace paths inside their Linux environment; Linux arm64, musl distributions, macOS, and native Windows remain unsupported until all three official Adapters pass the full platform contract matrix. Runtime creation rejects any other host before starting a Harness with `UNSUPPORTED_PLATFORM`, carrying the observed platform, architecture, and libc classification, while WSL-mounted Windows paths remain valid Linux absolute paths without performance or POSIX-permission guarantees.

@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import { access, readFile, readdir } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+import { access, readFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
 
 const root = resolve(import.meta.dirname, '../..');
 test('SDK guidance is self-contained and preserves qualification exceptions', async () => {
-  const qualification = await readFile(join(root, 'docs/testing/sdk-qualification.md'), 'utf8');
+  const qualification = await readFile(join(root, 'QUALIFICATION.md'), 'utf8');
   for (const fact of ['gpt-5.6-luna', 'opencode-go/deepseek-v4.1-flash', 'deepseek/deepseek-flash',
     'claude-sonnet-4-6', 'opencode-go/qwen3.8-flash', 'NOT_TRIGGERED', 'WAIVED', 'N/A']) {
     assert.ok(qualification.includes(fact), fact);
@@ -17,17 +18,11 @@ test('SDK guidance is self-contained and preserves qualification exceptions', as
     assert.equal(manifest.bugs.url, 'https://github.com/Gao-Sijie/muha/issues');
     assert.equal(manifest.homepage, `https://github.com/Gao-Sijie/muha/tree/main/packages/${directory}#readme`);
   }
-  const files = ['README.md', 'AGENTS.md', 'CONTRIBUTING.md', 'SECURITY.md', 'CONTEXT.md'];
-  async function collect(directory) {
-    for (const item of await readdir(directory, { withFileTypes: true })) {
-      const path = join(directory, item.name);
-      if (['node_modules', 'dist', '.git'].includes(item.name)) continue;
-      if (item.isDirectory()) await collect(path);
-      else if (item.name.endsWith('.md')) files.push(path);
-    }
-  }
-  await collect(join(root, 'docs'));
-  await collect(join(root, 'packages'));
+  const tracked = spawnSync('git', ['ls-files', '-z', '--', '*.md'], { cwd: root, encoding: 'utf8' });
+  assert.equal(tracked.status, 0, tracked.stderr);
+  const files = tracked.stdout.split('\0').filter(file => file && !file.split('/').includes('docs'));
+  for (const required of ['README.md', 'AGENTS.md', 'CONTRIBUTING.md', 'SECURITY.md', 'CONTEXT.md',
+    'QUALIFICATION.md']) assert.ok(files.includes(required), `missing shared guidance: ${required}`);
   for (const file of files) {
     const path = resolve(root, file), contents = await readFile(path, 'utf8');
     for (const [, target] of contents.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) {

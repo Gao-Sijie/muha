@@ -1,3 +1,0 @@
-# Aggregate Runtime close failures
-
-If any cleanup remains unsuccessful after `MuhaRuntime.close()` has attempted every component, it rejects one mechanical `MuhaError` carrying `RUNTIME_CLOSE_FAILED` and a non-empty list whose members are restricted to the existing typed `HARNESS_ERROR` with `closeHarness` operation or `EVENT_STORE_ERROR` with `commit` or `close` operation. Harness failures appear in Runtime registration order and Event Store failures follow them regardless of asynchronous completion order; the aggregate code is used even for one failure, introduces no generic cause or JavaScript `AggregateError` channel, and does not change the Runtime's irreversible closed state.

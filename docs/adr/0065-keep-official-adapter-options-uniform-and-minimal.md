@@ -1,3 +1,0 @@
-# Keep Official Adapter Options Uniform and Minimal
-
-`codexAdapter`, `openCodeAdapter`, and `kimiAdapter` each accept an optional `OfficialAdapterOptions` value containing exactly `env?: Readonly<Record<string, string | undefined>>`, `startupTimeoutMs?: number`, and `shutdownTimeoutMs?: number`. Environment overrides apply to the inherited process environment and `undefined` deletes a variable, so native command discovery uses the resulting effective `PATH`; both timeouts accept positive safe integers and default to 60,000 milliseconds. The three Registrations accept no executable, command, arguments, host, port, log level, native options, or Harness-specific public field in V0.1, and server bind details remain fixed internal Adapter behavior.

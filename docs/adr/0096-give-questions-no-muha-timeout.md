@@ -1,3 +1,0 @@
-# Give Questions No Muha Timeout
-
-Muha attaches no implicit timeout to a pending Question. It remains pending until the caller answers or dismisses it, the native Harness resolves or withdraws it, or Turn interruption, Session closure, or Runtime closure invalidates it. A native Harness timeout or auto-resolution is preserved as a Harness-sourced resolution, but Muha does not race it with its own timer. Because Question is human-paced, the 60-second Adapter startup and shutdown defaults do not apply; a caller that awaits only `TurnHandle.result` without consuming Question Events can therefore wait indefinitely by design.

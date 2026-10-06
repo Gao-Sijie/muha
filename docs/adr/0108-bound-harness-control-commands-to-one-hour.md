@@ -1,3 +1,0 @@
-# Bound Harness Control Commands to One Hour
-
-Muha applies a fixed internal one-hour watchdog to Harness control commands that should produce an acknowledgement: Session creation, resumption and listing requests, native Turn acceptance, model validation, Approval and Question responses, and interruption. This adds no public option. Turn execution itself and human-paced Question waiting remain unbounded. When a control watchdog expires, the native operation may have applied without its acknowledgement, so the command fails with the existing typed `HARNESS_ERROR` and Core treats the control plane as untrustworthy, triggering the established fatal close of the whole Runtime instead of continuing with potentially divergent state.

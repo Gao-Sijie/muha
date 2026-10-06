@@ -1,7 +1,0 @@
-# Separate public SDK and private Orchestrator deliveries
-
-Status: superseded by [ADR-0132](0132-keep-acp-first-optimization-in-muha-internal.md) on 2026-09-16 at the user's request. The paragraphs below preserve the earlier decision for history; public cutover and npm publication are not part of the current optimization, and no repository visibility or publication changes occurred.
-
-The next public SDK scope contains Core and the five existing Harness Adapters, while Orchestrator remains private and is supplied to novim as a compatible private artifact with exact SDK dependencies. After all five routes qualify and the candidate passes SDK and consumer acceptance, `Gao-Sijie/muha` becomes the SDK source of truth and internal consumers use fixed SDK artifacts, avoiding a permanent internal-to-public export process that could overwrite public contributions. Candidate artifact delivery, public repository cutover, and npm publication are separate milestones, with npm publication following the user's novim and report-visualization validation; this trades a single seven-package delivery boundary for an independently maintainable public SDK without dropping the private consumer dependency.
-
-[ADR-0111](0111-deliver-v0-1-as-a-local-artifact-set.md) and [ADR-0114](0114-expand-v0-1-2-to-a-five-package-local-release.md) continue to describe their historical internal deliveries; the [development plan (historical private reference)](../testing/private-history.md) now follows ADR-0132's internal-only scope.

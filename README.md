@@ -35,5 +35,10 @@ installed/authenticated Harnesses on `PATH`; Pi uses its exact normal SDK depend
 `@earendil-works/pi-coding-agent@0.84.2`, not a global CLI or bundled dependency tree.
 Real qualification commands are opt-in and must receive explicit budget approval.
 
-Start with [Core usage](packages/core/README.md), [qualification and exceptions](docs/testing/sdk-qualification.md),
+Local plans and historical decisions live in ignored `docs/` directories;
+private validation logs live in `.scratch/`. These files are not required for a
+fresh checkout. `npm run check:repository` rejects tracked `docs/` paths, and CI
+checks the committed tree before installing dependencies.
+
+Start with [Core usage](packages/core/README.md), [qualification and exceptions](QUALIFICATION.md),
 [contributing](CONTRIBUTING.md), [security](SECURITY.md), and the [domain glossary](CONTEXT.md).

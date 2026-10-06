@@ -1,3 +1,0 @@
-# Use the skills CLI for Workspace configuration
-
-Muha will use an exactly pinned `skills` package internally and execute its local CLI during explicit Workspace configuration because the package does not expose a stable programmatic API. Muha invokes only non-interactive project-level `add` with `--copy` and `--yes` for explicitly selected Skills and Harnesses, disables telemetry, and relies on the CLI's native clean-and-recreate behavior to replace a conflicting same-name Skill directory; an integration test requiring obsolete files to be removed gates every dependency upgrade. Muha does not expose update, removal, synchronization, or the CLI's types and output as public API. This dependency sets Muha's minimum supported Node.js version to 22.20.

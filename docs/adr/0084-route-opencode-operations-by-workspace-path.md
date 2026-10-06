@@ -1,3 +1,0 @@
-# Route OpenCode Operations by Workspace Path
-
-The OpenCode Adapter sends the normalized immutable `workspacePath` as `x-opencode-directory` on every workspace-scoped HTTP request and SSE connection rather than relying on the server process's current directory or implicit routing. It shares one authenticated native SSE connection per normalized Workspace path across that Workspace's live Agent Sessions, reference-counts the connection, and demultiplexes events by native Session identity. Session creation and listing use the requested Workspace path, while resumption verifies that the native Session's directory equals `SessionReference.workspacePath` after normalization and rejects a mismatch as an Adapter protocol failure instead of silently rebinding either side.

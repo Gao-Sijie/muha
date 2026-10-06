@@ -1,3 +1,0 @@
-# Exclusively Own Each Live Runtime Data Directory
-
-At most one live Runtime may own a given normalized `dataDir`, including across OS processes. A competing Runtime must fail initialization promptly instead of waiting for the general startup timeout, sharing writes, or stealing ownership. Core uses ownership semantics that the operating system or held SQLite connection releases automatically when the process dies; it does not rely on a persistent marker that can become a permanently stale lock. After an abnormal exit, a new Runtime may acquire the directory only after SQLite recovery and integrity validation succeed. The locking mechanism remains a private Core implementation detail with no public configuration.

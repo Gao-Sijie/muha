@@ -1,3 +1,0 @@
-# Expose Harness Effort as a Next-Turn Selection
-
-Muha V0.1.2 exposes Harness Effort as an optional Session-level, next-Turn selection through Session creation and resumption plus `AgentSession.effort` and idle-only `setEffort`. The value is an opaque, model-associated native string—Codex effort, Kimi thinking, or OpenCode variant—with no Muha-defined normalization, enumeration, persistence, or cross-Harness equivalence; changing the Harness Model clears it, and callers requiring deterministic resumption pass it again. This partially supersedes ADR-0031, ADR-0055, and ADR-0072, and extends ADR-0086's process-local selection model, trading a smaller normalized API for faithful access to native Harness behavior.

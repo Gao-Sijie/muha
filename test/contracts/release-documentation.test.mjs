@@ -13,7 +13,7 @@ const adapterReadmes = await Promise.all([
   "utf8",
 )));
 const qualification = await readFile(
-  new URL("../../docs/testing/sdk-qualification.md", import.meta.url),
+  new URL("../../QUALIFICATION.md", import.meta.url),
   "utf8",
 );
 

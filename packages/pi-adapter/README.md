@@ -2,7 +2,7 @@
 
 Stage-four implementation is qualified on the fixed SDK/patch baseline below,
 including controlled tests, independent installation, real Pi and Pi/Pi grilling.
-See [the qualification record](../../docs/testing/sdk-qualification.md)
+See [the qualification record](../../QUALIFICATION.md)
 for exact versions, evidence, failures and limits without exporting private diagnostics. No npm publication is implied.
 
 ```ts
@@ -70,7 +70,7 @@ and remain subject to Core's unredacted storage and caller-managed retention.
 The static Profile supports ordered text/images, native listing, Workspace
 Skills, model/effort selection, streaming messages/reasoning, tools and usage.
 The current qualification status is recorded in
-`docs/testing/sdk-qualification.md` in the source repository.
+`QUALIFICATION.md` in the source repository.
 
 - Explicitly select `autoApprove` or `harnessManaged`. Pi has no built-in approval
   gate; neither policy manufactures Approval events or bypasses native denials.

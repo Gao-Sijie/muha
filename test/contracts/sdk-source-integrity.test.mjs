@@ -11,7 +11,7 @@ test('migration provenance verifies every frozen runtime resource and rejects a 
   t.after(() => rm(fixture, { recursive: true, force: true }));
   await cp(join(root, 'packages'), join(fixture, 'packages'), { recursive: true,
     filter: path => !/\/(node_modules|dist)(\/|$)/.test(path) });
-  const manifest = join(root, 'docs/testing/sdk-runtime-sha256.json');
+  const manifest = join(root, 'scripts/fixtures/sdk-runtime-sha256.json');
   const command = [join(root, 'scripts/verify-sdk-source.mjs'), fixture, manifest];
   const before = spawnSync(process.execPath, command, { encoding: 'utf8' });
   assert.equal(before.status, 0, before.stderr);
