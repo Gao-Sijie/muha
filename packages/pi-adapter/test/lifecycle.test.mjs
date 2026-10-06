@@ -5,6 +5,7 @@ import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { controlledPi, completedTurn } from "./support/controlled-pi.mjs";
+import { hasProcessStopped } from "./support/process-state.mjs";
 
 test("Pi interrupts an accepted image/text request and can continue the same Session", { timeout: 15000 }, async t => {
   let requested;
@@ -74,14 +75,13 @@ test("Pi Session close reaps descendants even when the SDK process exits normall
   t.after(() => { try { process.kill(pid, "SIGKILL"); } catch {} });
   await session.close();
   // Linux may retain a killed orphan briefly as a zombie until init reaps it.
-  let state;
+  let stopped = false;
   for (let attempt = 0; attempt < 50; attempt++) {
-    try { state = await readFile(`/proc/${pid}/stat`, "utf8"); }
-    catch (error) { if (error.code !== "ENOENT") throw error; state = undefined; }
-    if (state === undefined || /^\d+ \(.*\) Z /.test(state)) break;
+    stopped = await hasProcessStopped(pid);
+    if (stopped) break;
     await delay(10);
   }
-  assert.ok(state === undefined || /^\d+ \(.*\) Z /.test(state), "Owned descendant is still executing after Session.close");
+  assert.ok(stopped, "Owned descendant is still executing after Session.close");
 });
 
 test("Pi fatal SDK loss reclaims an active native Bash tool's detached process group", { timeout: 15000 }, async t => {
@@ -113,14 +113,13 @@ test("Pi fatal SDK loss reclaims an active native Bash tool's detached process g
   process.kill(Number(await readFile(sdkPidFile, "utf8")), "SIGKILL");
   assert.equal((await turn.result).status, "failed");
   await runtime.close();
-  let state;
+  let stopped = false;
   for (let attempt = 0; attempt < 50; attempt++) {
-    try { state = await readFile(`/proc/${bashPid}/stat`, "utf8"); }
-    catch (error) { if (error.code !== "ENOENT") throw error; state = undefined; }
-    if (state === undefined || /^\d+ \(.*\) Z /.test(state)) break;
+    stopped = await hasProcessStopped(bashPid);
+    if (stopped) break;
     await delay(10);
   }
-  assert.ok(state === undefined || /^\d+ \(.*\) Z /.test(state), "Native detached Bash remains running after fatal Runtime close");
+  assert.ok(stopped, "Native detached Bash remains running after fatal Runtime close");
 });
 
 test("losing a Pi worker during Session creation closes the Runtime and interrupts other Turns", { timeout: 10000 }, async t => {
