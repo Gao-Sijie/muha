@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { auditLocalDelivery } from "../../scripts/audit-local-delivery.mjs";
+import { assertClipboardLicenseEvidence } from "../support/clipboard-license-contract.mjs";
 
 test("unbundled clipboard remains an upstream gap, not a Muha redistribution blocker", async () => {
   const audit = await auditLocalDelivery();
   assert.deepEqual(audit.problems, []);
   assert.deepEqual(audit.licenseBlockers, []);
-  assert.equal(audit.upstreamLicenseGaps.filter(gap => gap.includes("@mariozechner/clipboard")).length, 11);
+  assertClipboardLicenseEvidence({ ...audit, nodes: audit.dependencyClosure, edges: audit.dependencyEdges });
   assert.ok(audit.dependencyClosure.some(node => node.name === "@mariozechner/clipboard" &&
     node.version === "0.3.9"));
   assert.ok(audit.packages.every(item => item.bundledFiles.length === 0));

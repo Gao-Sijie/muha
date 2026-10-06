@@ -75,6 +75,12 @@ for await (const line of createInterface({ input: process.stdin })) {
     step(index++, "agent_response", "DONE", { text_delta: "partial output" });
     emit({ event: "result", result: { conversation_id: id, status: "ERROR", response: "partial output", error: "native request failed: EOF" } });
     await new Promise(resolve => process.stdout.write("", resolve));
+    // Flushing stdout does not acknowledge consumer processing. Keep ERROR
+    // classification and the separately covered process-loss race distinct.
+    while (await readFile(join(workspace, "native-error-exit.release"), "utf8").catch(error => {
+      if (error.code === "ENOENT") return undefined;
+      throw error;
+    }) !== "release") await new Promise(resolve => setTimeout(resolve, 10));
     process.exit(1);
   }
   if (process.env.MUHA_FAKE_AGY_SCENARIO === "json-log") {

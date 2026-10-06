@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { auditLocalDelivery } from "../../scripts/audit-local-delivery.mjs";
 import { bindDependencyLicenseEvidence } from "../../scripts/dependency-license-evidence.mjs";
+import { assertClipboardLicenseEvidence } from "../support/clipboard-license-contract.mjs";
 
 test("local delivery preserves exact supplemental Pi dependency license resources", async () => {
   const audit = await auditLocalDelivery();
@@ -33,12 +34,7 @@ test("unbundled OpenCode client license-body gaps remain explicit upstream evide
 
 test("clipboard's unverified notices remain visible without blocking unbundled Muha bytes", async () => {
   const audit = await auditLocalDelivery();
-  const unresolved = audit.dependencyClosure.filter(node =>
-    node.name.startsWith("@mariozechner/clipboard"));
-  assert.equal(unresolved.length, 11);
-  assert.ok(unresolved.every(node => node.licenseEvidence?.status === "blocked"));
-  assert.ok(audit.upstreamLicenseGaps.some(problem => problem.includes("@mariozechner/clipboard@0.3.9")));
-  assert.deepEqual(audit.licenseBlockers, []);
+  assertClipboardLicenseEvidence({ ...audit, nodes: audit.dependencyClosure, edges: audit.dependencyEdges });
 });
 
 test("a NOTICE-only archive cannot pass as a complete license body", () => {

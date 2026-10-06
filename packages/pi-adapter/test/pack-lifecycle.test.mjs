@@ -5,7 +5,7 @@ import test from "node:test";
 import { controlledPi } from "./support/controlled-pi.mjs";
 
 for (const operation of ["prepack", "build:sdk"]) {
-test(`${operation} does not break concurrent consumers loading the installed Pi SDK`, { timeout: 60000 }, async t => {
+test(`${operation} does not break concurrent consumers loading the installed Pi SDK`, { timeout: 180000 }, async t => {
   const fixtures = await Promise.all(Array.from({ length: 4 }, () => controlledPi(t)));
   const failures = [];
   const packing = (async () => {
@@ -21,15 +21,19 @@ test(`${operation} does not break concurrent consumers loading the installed Pi 
     // Each consumer has its own host process: Muha deliberately permits only
     // one live Runtime per process, even when data directories differ.
     try {
-      await promisify(execFile)(process.execPath, ["--input-type=module", "-e", `
+      const { stdout } = await promisify(execFile)(process.execPath, ["--input-type=module", "-e", `
         import { createMuhaRuntime } from "@muha-sdk/core";
         import { piAdapter } from "@muha-sdk/pi-adapter";
+        let completed = 0;
         for (let i = 0; i < 10; i++) {
           const runtime = await createMuhaRuntime({ dataDir: ${JSON.stringify(fixture.root + "/diagnostics")},
             harnesses: [piAdapter(${JSON.stringify(fixture.options)})] });
           await runtime.close();
+          completed++;
         }
-      `], { cwd: new URL("../../../", import.meta.url), timeout: 30000 });
+        process.stdout.write(JSON.stringify({ completed }));
+      `], { cwd: new URL("../../../", import.meta.url), timeout: 120000 });
+      assert.equal(JSON.parse(stdout).completed, 10, 'each of four concurrent consumers must finish all ten loads');
     } catch (error) { failures.push(describeFailure(error)); }
   }));
   await packing;

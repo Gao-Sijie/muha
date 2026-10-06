@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import test from "node:test";
@@ -175,13 +175,16 @@ test("AGY usage replaces per-step snapshots and excludes previous native Session
   } finally { await f.close(); }
 });
 
-test("AGY does not invent retryability for an unclassified native ERROR even when retries are enabled", async () => {
+test("AGY does not invent retryability for an unclassified native ERROR even when retries are enabled", { timeout: 10_000 }, async () => {
   const f = await fixture("native-error-exit", { turnRetryPolicy: { maxRetries: 2 } });
   try {
     const turn = await f.session.startTurn([{ type: "text", text: "Attempt the work." }]);
     const events = [];
     for await (const event of turn) events.push(event);
     const result = await turn.result;
+    // Test semantic ERROR before process-loss behavior. The native fixture waits
+    // for this acknowledgement rather than racing stdout parsing with exit.
+    await writeFile(join(f.workspacePath, "native-error-exit.release"), "release");
     assert.equal(result.status, "failed");
     assert.equal(result.error.code, "HARNESS_ERROR");
     assert.equal(result.error.nativeCode, "ERROR");

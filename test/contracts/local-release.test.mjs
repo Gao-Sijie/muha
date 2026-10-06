@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
+import { assertClipboardLicenseEvidence } from "../support/clipboard-license-contract.mjs";
 
 const repositoryRoot = resolve(import.meta.dirname, "../..");
 const coreManifest = JSON.parse(await readFile(
@@ -59,7 +60,7 @@ test(`the diagnostic V${releaseVersion} packer verifies six SDK packages, depend
     assert.ok(release.dependencies.nodes.every(node => node.license && node.integrity));
     assert.ok(release.dependencies.nodes.some(node => node.name === "@agentclientprotocol/sdk" && node.version === "1.4.0"));
     assert.deepEqual(release.dependencies.licenseBlockers, []);
-    assert.equal(release.dependencies.upstreamLicenseGaps.filter(item => item.includes("@mariozechner/clipboard")).length, 11);
+    assertClipboardLicenseEvidence(release.dependencies);
     assert.match(readme, /PREVIEW.*not an acceptance candidate/);
     assert.deepEqual(release.packages.map(({ filename }) => filename).sort(), expectedTarballs);
     assert.deepEqual(
@@ -126,7 +127,7 @@ test(`the diagnostic V${releaseVersion} packer verifies six SDK packages, depend
       });
     assert.equal(isolatedInstall.status, 0,
       [isolatedInstall.stdout, isolatedInstall.stderr].filter(Boolean).join("\n"));
-    assert.match(isolatedInstall.stdout, /✔ an isolated fixture can install Core and all five official Adapters/,
+    assert.match(isolatedInstall.stdout, /(?:✔ |ok \d+ - )an isolated fixture can install Core and all five official Adapters/,
       "the preview tarballs must pass an actual isolated Runtime/Session/Turn install test");
   } finally {
     await rm(output, { recursive: true, force: true });
