@@ -65,6 +65,10 @@ test("an isolated fixture can install Core and all five official Adapters", asyn
       isolatedEnvironment.npm_config_userconfig = join(root, "anonymous.npmrc");
       tarballs = ["@muha-sdk/core", ...adapters.map(([, name]) => name)].map(name => `${name}@${registryVersion}`);
     } else if (process.env.MUHA_RELEASE_DIRECTORY) {
+      isolatedEnvironment.npm_config_registry = "https://registry.npmjs.org/";
+      isolatedEnvironment.npm_config_cache = join(root, "cold-npm-cache");
+      isolatedEnvironment.npm_config_userconfig = join(root, "anonymous.npmrc");
+      for (const name of ["NODE_AUTH_TOKEN", "NPM_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"]) delete isolatedEnvironment[name];
       const releaseDirectory = resolve(process.env.MUHA_RELEASE_DIRECTORY);
       const release = JSON.parse(await readFile(join(releaseDirectory, "release.json"), "utf8"));
       assert.equal(release.packages.length, 6, "release must contain exactly six Muha SDK packages");
@@ -115,7 +119,7 @@ test("an isolated fixture can install Core and all five official Adapters", asyn
     );
     await writeFile(
       join(consumer, "package.json"),
-      JSON.stringify({ private: true, type: "module", ...(registryVersion ? { allowScripts: reviewedInstallScripts } : {}) }),
+      JSON.stringify({ private: true, type: "module", ...(registryVersion || process.env.MUHA_RELEASE_DIRECTORY ? { allowScripts: reviewedInstallScripts } : {}) }),
     );
     try { run(
       "npm", [
@@ -241,7 +245,7 @@ async function verifyConsumerInstall(adapterDirectory, adapterPackage, factory) 
 
     await writeFile(
       join(consumer, "package.json"),
-      JSON.stringify({ private: true, type: "module", ...(registryVersion ? { allowScripts: reviewedInstallScripts } : {}) }),
+      JSON.stringify({ private: true, type: "module", ...(registryVersion || process.env.MUHA_RELEASE_DIRECTORY ? { allowScripts: reviewedInstallScripts } : {}) }),
     );
     run(
       "npm",
@@ -651,7 +655,7 @@ if (registryVersion) test("Core alone installs from the public Registry and repl
   const env = { ...process.env, npm_config_registry: "https://registry.npmjs.org/",
     npm_config_cache: join(root, "cold-npm-cache"), npm_config_userconfig: join(root, "anonymous.npmrc") };
   try {
-    await writeFile(join(root, "package.json"), JSON.stringify({ private: true, type: "module", ...(registryVersion ? { allowScripts: reviewedInstallScripts } : {}) }));
+    await writeFile(join(root, "package.json"), JSON.stringify({ private: true, type: "module", ...(registryVersion || process.env.MUHA_RELEASE_DIRECTORY ? { allowScripts: reviewedInstallScripts } : {}) }));
     run("npm", ["install", "--save-exact", "--no-audit", "--no-fund", `@muha-sdk/core@${registryVersion}`], { cwd: root, env });
     await verifyRegistryLockAndReinstall(root, env, ["@muha-sdk/core"]);
     run(process.execPath, ["--input-type=module", "-e", "import {createMuhaRuntime} from '@muha-sdk/core'; if(typeof createMuhaRuntime!=='function')throw new Error('Core ESM entry missing');"], { cwd: root });

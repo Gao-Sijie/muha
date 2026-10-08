@@ -46,6 +46,10 @@ jobs:
       - run: npm audit --omit=dev --audit-level=low
       - run: node scripts/verify-sdk-source.mjs
       - run: node scripts/pack-local-release.mjs --candidate --output .scratch/npm-candidate
+      - name: Install the exact prepared cohort before artifact upload
+        env:
+          MUHA_RELEASE_DIRECTORY: .scratch/npm-candidate
+        run: node --test test/contracts/package-install.test.mjs
       - run: node scripts/release-workflow.mjs summary
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
