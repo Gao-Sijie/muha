@@ -20,7 +20,7 @@
     "build": "tsc -b --pretty false && npm run build:sdk",
     "build:sdk": "node scripts/build-sdk.mjs",
     "prepack": "node scripts/build-sdk.mjs --check",
-    "test": "npm run build:sdk && node --test --test-concurrency=2 test/*.test.mjs"
+    "test": "npm run build:sdk && node --test --test-concurrency=1 test/*.test.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "1.0.4",
