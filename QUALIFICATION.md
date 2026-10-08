@@ -83,5 +83,5 @@ cold public-Registry consumer acceptance are separate pending release gates.
 
 Release preparation additionally passed SDK 482 tests / 2 opt-in skips and all
 58 Pi controlled tests, including publication/provenance rejection cases. Only
-the test runner concurrency and two OpenCode fixture timing conditions changed;
+the test runner concurrency and readiness/cancellation fixture timing conditions changed;
 qualified non-Pi runtime digests and the dependency lockfile remain unchanged.

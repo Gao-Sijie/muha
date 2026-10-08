@@ -51,8 +51,9 @@ test("Kimi accepts the current Local ready line without dropping legacy compatib
     runtime = await createMuhaRuntime({
       harnesses: [kimiAdapter({
         env: { PATH: controlledPath, MUHA_FAKE_KIMI_SCENARIO: "current-ready" },
-        startupTimeoutMs: 200,
-        shutdownTimeoutMs: 200,
+        // This successful handshake verifies readiness syntax, not a 200ms startup deadline.
+        startupTimeoutMs: 2_000,
+        shutdownTimeoutMs: 2_000,
       })],
       dataDir: join(root, "diagnostics"),
     });
