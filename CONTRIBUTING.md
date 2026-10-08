@@ -12,9 +12,7 @@ Run the affected test first and full `npm run check` before handoff. Preserve
 resource/permission, ESM, declarations, ordinary dependency and cleanup guarantees.
 
 This repository is the sole development source for Core and five official
-Adapters; Orchestrator belongs in its separate private project. All packages
-remain at `0.1.13` and `private:true`
-until a separately approved npm release. Do not add Orchestrator workspaces or
+Adapters; Orchestrator belongs in its separate private project. The six SDK packages share release version `0.1.13` and public npm metadata; the root workspace remains `private:true`. Publishing requires a clean, verified source candidate and the controlled release workflow. Do not add Orchestrator workspaces or
 copy private diagnostics into this SDK. Real models require explicit approval;
 unchanged source can retain [qualified evidence and limitations](QUALIFICATION.md).
 

@@ -10,9 +10,14 @@ import { auditProductionDependencies } from "./dependency-audit.mjs";
 import { bindDependencyLicenseEvidence } from "./dependency-license-evidence.mjs";
 
 export async function auditLocalDelivery(root = resolve(import.meta.dirname, "..")) {
+const workspace = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
 const lockBytes = await readFile(join(root, "package-lock.json"));
 const lock = JSON.parse(lockBytes);
 const problems = [], packages = [], resources = [], packageHooks = {};
+if (workspace.private !== true) problems.push("the root workspace must remain private");
+if (JSON.stringify(workspace.workspaces) !== JSON.stringify(MUHA_DELIVERY_PACKAGES.map(item => `packages/${item.directory}`))) {
+  problems.push("the root must contain exactly the six official SDK workspaces");
+}
 const digest = bytes => createHash("sha256").update(bytes).digest("hex");
 const sorted = object => JSON.stringify(Object.fromEntries(Object.entries(object ?? {}).sort(([a], [b]) => a.localeCompare(b))));
 for (const delivery of MUHA_DELIVERY_PACKAGES) {
@@ -29,13 +34,23 @@ for (const delivery of MUHA_DELIVERY_PACKAGES) {
       if (!Array.isArray(result) || result.length !== 1 || !Array.isArray(result[0].files)) {
         throw new Error("invalid npm pack result");
       }
-      bundledFiles = result[0].files.map(file => file.path).filter(path => path.startsWith("node_modules/"));
+      const paths = result[0].files.map(file => file.path);
+      for (const path of paths) {
+        if (path.split("/").includes("docs") || !["package.json", "LICENSE", "README.md"].includes(path) && !path.startsWith("dist/")) {
+          problems.push(`${manifest.name}: file outside the publication allowlist: ${path}`);
+        }
+      }
+      bundledFiles = paths.filter(path => path.startsWith("node_modules/"));
       if (bundledFiles.length) problems.push(`${manifest.name}: unexpectedly redistributes node_modules files`);
     } catch (error) { problems.push(`${manifest.name}: invalid npm pack file list: ${error.message}`); }
   }
   packages.push({ directory: delivery.directory, manifest, bundledFiles });
   if (manifest.name !== delivery.packageName) problems.push(`${delivery.directory}: wrong package identity`);
-  if (manifest.private !== true) problems.push(`${manifest.name}: must remain private during repository cutover`);
+  if (manifest.private !== undefined) problems.push(`${manifest.name}: SDK publication must omit private`);
+  if (manifest.publishConfig?.access !== "public" || manifest.publishConfig?.registry !== "https://registry.npmjs.org/") {
+    problems.push(`${manifest.name}: must explicitly publish publicly to the npm registry`);
+  }
+  if (JSON.stringify(manifest.files) !== JSON.stringify(["dist"])) problems.push(`${manifest.name}: unexpected files allowlist`);
   const locked = lock.packages?.[`packages/${delivery.directory}`];
   if (locked?.version !== manifest.version || sorted(locked?.dependencies) !== sorted(manifest.dependencies)) {
     problems.push(`${manifest.name}: workspace lock entry does not match its manifest`);

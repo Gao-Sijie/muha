@@ -94,14 +94,26 @@ export async function auditProductionDependencies({ root, packages, lock }) {
       const installExecuted = phase === "preinstall" || phase === "install" || phase === "postinstall" ||
         (["prepare", "prepack"].includes(phase) && !/^https?:\/\/.*\.tgz(?:\?.*)?$/.test(locked?.resolved ?? ""));
       installHooks[phase] = { command, installExecuted, reviewed: false };
-      if (manifest.name === "@google/genai" && manifest.version === "1.52.0" && phase === "preinstall" && command === "echo 'preinstall: no-op'") {
+      if (manifest.name === "@google/genai" && ["1.52.0", "2.21.0"].includes(manifest.version) && phase === "preinstall" && command === "echo 'preinstall: no-op'") {
         installHooks[phase].reviewed = true;
       }
       // The pinned protobufjs hook only reads manifests and prints a version
       // scheme warning. It does not download or install a Coding Harness.
-      if (manifest.name === "protobufjs" && manifest.version === "7.6.5" && phase === "postinstall" && command === "node scripts/postinstall") {
+      if (manifest.name === "protobufjs" && ["7.6.5", "7.6.6"].includes(manifest.version) && phase === "postinstall" && command === "node scripts/postinstall") {
         const sha256 = digest(await readFile(join(dirname(path), "scripts/postinstall.js")));
         installHooks[phase] = { command, installExecuted, sha256, reviewed: sha256 === "5af8463b97ee8e309b4a2111f9479bacdf0c180de0ca0155527679b1fc6d9e6c" };
+      }
+      // This exact esbuild installer selects its matching optional-platform
+      // binary. If absent it fetches that version from npm and checks the
+      // binary SHA256 against the pinned manifest before execution. This is
+      // an esbuild build helper, not installation of a Coding Harness.
+      if (manifest.name === "esbuild" && manifest.version === "0.28.2" &&
+          phase === "postinstall" && command === "node install.js" &&
+          digest(bytes) === "9d0bc453f4e791553c4cc2298ba023b409241fd9801e494741666eb0f6051490" &&
+          locked?.integrity === "sha512-HKVLS8dvII+xoKW9kmqxbRKrnWEXfJJr/FZhhJmiqIB0e053QNYFqOBouTMO/k5sID4MvCiUCvv8b9M4h32wIA==") {
+        const sha256 = digest(await readFile(join(dirname(path), "install.js")));
+        installHooks[phase] = { command, installExecuted, sha256,
+          reviewed: sha256 === "612294e278914443bdcf81cb17f54afec34dbdd2ebd999a6ee187912320cc315" };
       }
       if (phase === "install" && command === "node-gyp-build-optional-packages" && reviewedMsgpackrHook) {
         installHooks[phase].reviewed = true;

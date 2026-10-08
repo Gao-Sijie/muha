@@ -1,9 +1,9 @@
 # @muha-sdk/pi-adapter
 
-Stage-four implementation is qualified on the fixed SDK/patch baseline below,
-including controlled tests, independent installation, real Pi and Pi/Pi grilling.
-See [the qualification record](../../QUALIFICATION.md)
-for exact versions, evidence, failures and limits without exporting private diagnostics. No npm publication is implied.
+Pi uses the verified high-level input patch for SDK 1.0.4. See
+[qualification and limitations](https://github.com/Gao-Sijie/muha/blob/main/QUALIFICATION.md)
+for source versions and acceptance. The older Pi/Pi grilling result belongs to
+SDK 0.84.2 and does not qualify SDK 1.0.4.
 
 ```ts
 import { createMuhaRuntime } from "@muha-sdk/core";
@@ -27,7 +27,7 @@ try {
 
 ## Native configuration and execution
 
-Pi declares the exact official SDK version `@earendil-works/pi-coding-agent@0.84.2`
+Pi declares the exact official SDK version `@earendil-works/pi-coding-agent@1.0.4`
 as a normal npm dependency; it does not bundle the SDK tree. It is not a PATH
 CLI or a globally installed SDK. Installing this Adapter needs Registry access or
 a prewarmed npm cache. Callers supply native Pi authentication and
@@ -80,7 +80,7 @@ The current qualification status is recorded in
   inside this Adapter; consumers need no Pi-specific ordering metadata. A bounded
   high-level SDK patch preserves normal user-message persistence and lifecycle.
   Explicit native input transformations and Skill/template expansion retain their
-  native replacement semantics. Image-only input is valid; PNG/JPEG/WebP/GIF are
+  native replacement semantics. Pi 1.x also decodes and normalizes images; native omissions or normalization hints produce its replacement message. Image-only input is valid; PNG/JPEG/WebP/GIF are
   the supported Muha media types.
 - Workspace Skills use the native `.pi/skills` target. Pi can install and load
   native extensions, including MCP extensions, independently of Muha.

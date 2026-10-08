@@ -2,7 +2,7 @@
 
 The first functional version was accepted against source
 `8fa1a52aee74200e11c39e91c1ac7650bf31e1c4`. The migration source document baseline
-is `1c59b2d48f14ba508d3dafb93bb2e4455cdba6a1`; runtime files are unchanged.
+is `1c59b2d48f14ba508d3dafb93bb2e4455cdba6a1`; the unchanged Harnesses retain that baseline. Pi 1.0.4 adaptation is authorized and its bounded requalification is pending.
 [Sorted SHA256 manifest](scripts/fixtures/sdk-runtime-sha256.json) maps the six packages only.
 The former whole packages-tree fingerprint included private Orchestrator and
 cannot identify this SDK tree. Raw evidence is retained privately.
@@ -41,8 +41,7 @@ fixtures and package resources/permissions/licenses/dependency-closure contracts
 Diagnostic tarballs and their checksums are test evidence only. No package is published,
 no consumer application is tested, and no paid real-model matrix is
 rerun by this migration. Package metadata/navigation, workspace membership and
-test organization change; runtime TypeScript, workers/loader, C sources, Pi patch
-algorithm, routes, Profiles, defaults and pinned production dependencies do not.
+test organization change; the four other Harness runtimes, Core, C sources, routes and Profiles remain unchanged. The separately authorized Pi 1.0.4 update changes its input patch, extension preflight adaptation and production dependency closure; it requires new controlled and bounded real-model evidence before publication.
 
 Any future behavior/loading/dependency change must enumerate affected units,
 cost and bounded real-model requalification, then obtain authorization before

@@ -21,7 +21,7 @@ test('a fresh SDK checkout has exactly six locked workspaces and guarded develop
   for (const name of directories) {
     const manifest = JSON.parse(await readFile(new URL(`../../packages/${name}/package.json`, import.meta.url), 'utf8'));
     assert.equal(manifest.version, '0.1.13');
-    assert.equal(manifest.private, true);
+    assert.equal(manifest.private, undefined);
     assert.deepEqual(manifest.dependencies, lock.packages[`packages/${name}`].dependencies);
   }
 });

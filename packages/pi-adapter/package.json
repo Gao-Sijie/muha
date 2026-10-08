@@ -1,7 +1,6 @@
 {
   "name": "@muha-sdk/pi-adapter",
   "version": "0.1.13",
-  "private": true,
   "description": "Official Pi SDK adapter for Muha SDK.",
   "type": "module",
   "exports": {
@@ -21,10 +20,10 @@
     "build": "tsc -b --pretty false && npm run build:sdk",
     "build:sdk": "node scripts/build-sdk.mjs",
     "prepack": "node scripts/build-sdk.mjs --check",
-    "test": "npm run build:sdk && node --test test/*.test.mjs"
+    "test": "npm run build:sdk && node --test --test-concurrency=2 test/*.test.mjs"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "0.84.2",
+    "@earendil-works/pi-coding-agent": "1.0.4",
     "@muha-sdk/core": "0.1.13"
   },
   "repository": {
@@ -35,5 +34,9 @@
   "bugs": {
     "url": "https://github.com/Gao-Sijie/muha/issues"
   },
-  "homepage": "https://github.com/Gao-Sijie/muha/tree/main/packages/pi-adapter#readme"
+  "homepage": "https://github.com/Gao-Sijie/muha/tree/main/packages/pi-adapter#readme",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
 }

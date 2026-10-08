@@ -17,9 +17,9 @@ const sdkRoot = new URL("../../../node_modules/@earendil-works/pi-coding-agent/"
 const sdkEntry = new URL("dist/index.js", sdkRoot);
 const target = new URL("core/agent-session.js", sdkEntry);
 const source = await readFile(target, "utf8");
-const expected = "9f065b4a277857db100e3277c4d18316c89cd46b11f6ba8140122f19efbe47c4";
+const expected = "9898d8a44ba68d495b0f6e78f888116a6496d7c1b5d1bb568e3028c3b1413977";
 if (createHash("sha256").update(source).digest("hex") !== expected) {
-  throw new Error("Pi SDK 0.84.2 input patch does not match installed source");
+  throw new Error("Pi SDK 1.0.4 input patch does not match installed source");
 }
 let patched = source;
 function replaceOnce(from, to) {
@@ -28,7 +28,6 @@ function replaceOnce(from, to) {
 }
 replaceOnce("    async prompt(text, options) {", `    async prompt(text, options) {
         const orderedContent = Array.isArray(text) ? structuredClone(text) : undefined;
-        let inputTransformed = false;
         if (orderedContent) {
             if (orderedContent.length === 0 || orderedContent.some(part =>
                 !part || (part.type !== "text" && part.type !== "image"))) {
@@ -40,18 +39,22 @@ replaceOnce("    async prompt(text, options) {", `    async prompt(text, options
             text = orderedContent.filter(part => part.type === "text").map(part => part.text).join("\\n");
             options = { ...options, images: orderedContent.filter(part => part.type === "image") };
         }`);
-replaceOnce('                if (inputResult.action === "transform") {',
-  '                if (inputResult.action === "transform") {\n                    inputTransformed = true;');
-replaceOnce(`            const userContent = [{ type: "text", text: expandedText }];
-            if (currentImages) {
-                userContent.push(...currentImages);
-            }`, `            const userContent = orderedContent && !inputTransformed && expandedText === text
-                ? orderedContent
-                : [{ type: "text", text: expandedText }, ...(currentImages ?? [])];`);
+// An explicit native transformation wins even when its text is unchanged.
+replaceOnce('return { text: inputResult.text, images: inputResult.images ?? images };',
+  'return { text: inputResult.text, images: inputResult.images ?? images, transformed: true };');
+// Keep Pi's image normalization. When it can preserve every image slot, place
+// normalized images back into the original ordered parts. Native replacement
+// text, image omissions, or normalization hints use Pi's replacement message.
+replaceOnce(`        const userContent = [{ type: "text", text: userText }];
+        userContent.push(...normalized.images);`, `        let imageIndex = 0;
+        const userContent = orderedContent && !processedInput.transformed && expandedText === text &&
+            normalized.hints.length === 0 && normalized.images.length === (currentImages?.length ?? 0)
+            ? orderedContent.map(part => part.type === "image" ? normalized.images[imageIndex++] : part)
+            : [{ type: "text", text: userText }, ...normalized.images];`);
 const output = new URL("../dist/", import.meta.url);
 const licenseResources = [
-  [new URL("node_modules/@aws-sdk/core/LICENSE", sdkRoot), "third-party-licenses/aws-sdk-3.972.39.LICENSE", "edea91454b811f127fbdea3d86f378f6719bd372ed440abf82b232f6fca06c3d"],
-  [new URL("node_modules/data-uri-to-buffer/README.md", sdkRoot), "third-party-licenses/data-uri-to-buffer-4.0.1.README.md", "a7cc4332acfa1f9b6530e01aac77fefe74f2efa32579215fddaa473013f9a25c"],
+  [new URL("../../../node_modules/@aws-sdk/core/LICENSE", import.meta.url), "third-party-licenses/aws-sdk-3.972.39.LICENSE", "edea91454b811f127fbdea3d86f378f6719bd372ed440abf82b232f6fca06c3d"],
+  [new URL("../../../node_modules/data-uri-to-buffer/README.md", import.meta.url), "third-party-licenses/data-uri-to-buffer-4.0.1.README.md", "a7cc4332acfa1f9b6530e01aac77fefe74f2efa32579215fddaa473013f9a25c"],
   [new URL("../third-party-licenses/nodable-entities-2.1.0.LICENSE", import.meta.url), "third-party-licenses/nodable-entities-2.1.0.LICENSE", "750cb3fb6362804957ef52caaf9b5c824015be44d494637330d7cd8834d31d40"],
   [new URL("../third-party-licenses/xml-naming-0.1.0.LICENSE", import.meta.url), "third-party-licenses/xml-naming-0.1.0.LICENSE", "8e75fc0e776c62ccadb8178ece8d3daa9ba7601fb0a49b2dfb0ea9a7a5c0aa07"],
 ];
@@ -68,7 +71,7 @@ if (process.argv.includes("--check")) {
   // tree that other owned Session processes may currently be importing.
   const manifest = JSON.parse(await readFile(new URL("sdk-patch.json", output), "utf8"));
   const hash = value => createHash("sha256").update(value).digest("hex");
-  if (manifest.originalSha256 !== expected || manifest.patchedSha256 !== hash(patched) ||
+  if (manifest.version !== "1.0.4" || manifest.originalSha256 !== expected || manifest.patchedSha256 !== hash(patched) ||
       hash(await readFile(new URL("ordered-agent-session.mjs", output))) !== hash(patched)) {
     throw new Error("Pi SDK patch is missing or stale; build before packing");
   }
@@ -84,7 +87,7 @@ if (process.argv.includes("--check")) {
 await mkdir(output, { recursive: true });
 await writeChanged(new URL("ordered-agent-session.mjs", output), patched);
 await writeChanged(new URL("sdk-patch.json", output), JSON.stringify({
-  version: "0.84.2", originalSha256: expected,
+  version: "1.0.4", originalSha256: expected,
   patchedSha256: createHash("sha256").update(patched).digest("hex"),
 }) + "\n");
 await copyChanged(new URL("../src/sdk-loader.mjs", import.meta.url), new URL("sdk-loader.mjs", output));

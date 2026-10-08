@@ -11,7 +11,15 @@ export const clipboardPackageNames = [
 export function assertClipboardLicenseEvidence({ nodes, edges, upstreamLicenseGaps, licenseBlockers }) {
   const clipboard = nodes.filter(node => node.name.startsWith('@mariozechner/clipboard'));
   const parent = clipboard.find(node => node.name === '@mariozechner/clipboard');
-  assert.ok(parent, 'ordinary Pi dependency must expose the pinned clipboard identity');
+  // Pi 1.x removed this dependency. Its absence must include every edge;
+  // any retained legacy instance still receives the original full audit.
+  if (!parent) {
+    assert.equal(clipboard.length, 0);
+    assert.equal(edges.some(edge => edge.name.startsWith('@mariozechner/clipboard')), false);
+    assert.equal(upstreamLicenseGaps.some(gap => gap.startsWith('@mariozechner/clipboard')), false);
+    assert.deepEqual(licenseBlockers, []);
+    return;
+  }
   const variants = edges.filter(edge => edge.from === parent.path && edge.name.startsWith('@mariozechner/clipboard-'));
   assert.deepEqual(variants.map(edge => edge.name).sort(), clipboardPackageNames.slice(1).sort());
   for (const edge of variants) {

@@ -62,8 +62,10 @@ process.on("message", async message => {
       extensions.reset();
       const messageCount = session.messages.length;
       let accepted = false;
-      running = session.prompt(args.input, { preflightResult(ok) {
-        if (ok) { extensions.check(); accepted = true; void reply(null); }
+      running = session.prompt(args.input, { preflightResult(disposition) {
+        if (!accepted && ["started", "handled", "queued"].includes(disposition)) {
+          extensions.check(); accepted = true; void reply(null);
+        }
       } });
       try {
         await running;

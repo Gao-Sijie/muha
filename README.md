@@ -10,10 +10,19 @@ This SDK repository contains six packages at `0.1.13`: [Core](packages/core/READ
 and [Pi](packages/pi-adapter/README.md). Orchestrator is an independent private
 project, not an SDK package or workspace.
 
-The repository and all packages remain private during migration. No package is
-published by this cutover; npm publication and public visibility each require
-separate approval and acceptance. Temporary diagnostic tarballs are tests only,
-not consumer delivery or Registry-install proof.
+The root workspace stays private; the six SDK packages carry public npm release
+metadata. GitHub visibility, npm upload and Registry-install acceptance are
+separate release gates. Diagnostic tarballs are test evidence; only a verified
+publication candidate can enter the release workflow.
+
+For an npm release, install Core and the Harness Adapters you use:
+
+```sh
+npm install @muha-sdk/core@0.1.13 @muha-sdk/pi-adapter@0.1.13
+```
+
+The five Adapters depend on the matching Core version. See the package READMEs
+for examples, native authentication and Harness prerequisites.
 
 ## Develop
 
@@ -32,7 +41,7 @@ npm run check
 
 Controlled tests need no model subscription. Native CLI use requires independently
 installed/authenticated Harnesses on `PATH`; Pi uses its exact normal SDK dependency
-`@earendil-works/pi-coding-agent@0.84.2`, not a global CLI or bundled dependency tree.
+`@earendil-works/pi-coding-agent@1.0.4`, not a global CLI or bundled dependency tree.
 Real qualification commands are opt-in and must receive explicit budget approval.
 
 Local plans and historical decisions live in ignored `docs/` directories;

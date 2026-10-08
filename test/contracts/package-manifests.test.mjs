@@ -29,13 +29,13 @@ test("the official packages share one installable ESM contract", async () => {
       const manifest = await readManifest(directory);
       assert.equal(manifest.name, expectedName);
       assert.equal(manifest.type, "module");
-      assert.equal(manifest.private, true);
+      assert.equal(manifest.private, undefined);
       assert.equal(manifest.engines.node, ">=22.20.0");
       assert.deepEqual(
         manifest.files,
         ["dist"],
       );
-      assert.equal(manifest.publishConfig, undefined);
+      assert.deepEqual(manifest.publishConfig, { access: "public", registry: "https://registry.npmjs.org/" });
       assert.deepEqual(manifest.exports["."], {
         types: "./dist/index.d.ts",
         default: "./dist/index.js",
@@ -68,7 +68,7 @@ test("the official packages share one installable ESM contract", async () => {
   });
   assert.deepEqual(manifests[4].dependencies, {
     "@muha-sdk/core": releaseVersion,
-    "@earendil-works/pi-coding-agent": "0.84.2",
+    "@earendil-works/pi-coding-agent": "1.0.4",
   });
   assert.equal(manifests[4].bundledDependencies, undefined);
   assert.equal(manifests[4].bundleDependencies, undefined);

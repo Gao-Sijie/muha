@@ -152,7 +152,7 @@ configuration is not used to implement Session policies. Existing call shapes
 and the Capability Profile shape remain valid, but permissions, Questions and
 Approval event frequency can change. Use explicit supported policies for AGY/Pi
 because Core's default is `interactive`. See the
-[qualification and limitations](../../QUALIFICATION.md). Historical local
+[qualification and limitations](https://github.com/Gao-Sijie/muha/blob/main/QUALIFICATION.md). Historical local
 release formats are not the independent SDK's distribution gate.
 
 An unsupported direct operation rejects before its native action with
@@ -177,6 +177,6 @@ Diagnostic records contain complete, unredacted native data. V0.1 provides no en
 so storage can grow without bound. Different Harnesses are not semantically
 equivalent and Muha does not promise identical output. V0.1 explicitly does not support
 third-party Harness registration. V0.1.13 supports the five-official-Harness
-set, including Pi and AGY; the [current qualification](../../QUALIFICATION.md)
-records source and exceptions; the [AGY qualification](../../QUALIFICATION.md)
-retains AGY's model-level effort N/A. No npm publication is implied.
+set, including Pi and AGY; the [current qualification](https://github.com/Gao-Sijie/muha/blob/main/QUALIFICATION.md)
+records source and exceptions; the [AGY qualification](https://github.com/Gao-Sijie/muha/blob/main/QUALIFICATION.md)
+retains AGY's model-level effort N/A. Qualification evidence and publication acceptance are recorded separately.

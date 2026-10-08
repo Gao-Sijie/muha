@@ -1,7 +1,6 @@
 {
   "name": "@muha-sdk/agy-adapter",
   "version": "0.1.13",
-  "private": true,
   "description": "Official native AGY CLI adapter for Muha SDK.",
   "type": "module",
   "engines": {
@@ -32,5 +31,9 @@
   "homepage": "https://github.com/Gao-Sijie/muha/tree/main/packages/agy-adapter#readme",
   "dependencies": {
     "@muha-sdk/core": "0.1.13"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

@@ -43,7 +43,8 @@ const profiles = createConformanceProfiles({
   pi: {
     initialModel: "controlled/controlled", effortModel: "controlled/next", supportedEffort: "high",
     unsupportedEffort: "extreme", defaultEffort: "medium", minimalModel: "controlled/minimal",
-    missingModel: "controlled/missing", restoredEffort: "high", implicitSubmission: "high",
+    // Pi 1.x reselecting the model restores its native default thinking level.
+    missingModel: "controlled/missing", restoredEffort: "high", implicitSubmission: "medium",
     evidence: root => root,
     options: async (root, t) => {
       const fixture = await piConformance(t);

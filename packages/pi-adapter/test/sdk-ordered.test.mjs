@@ -100,6 +100,30 @@ test("native input hooks see the projection and may explicitly replace ordered c
   } finally { await f.close(); }
 });
 
+test("an explicit transform with identical projection still replaces ordered input", async () => {
+  const f = await fixture({ extension(pi) {
+    // The native runner collapses an unchanged text AND image-array identity
+    // to continue. A replacement array makes this an actual native transform.
+    pi.on("input", event => ({ action: "transform", text: event.text, images: [...event.images] }));
+  } });
+  try {
+    await f.session.prompt([image, { type: "text", text: "same" }]);
+    assert.deepEqual(f.inputs[0].find(message => message.role === "user").content,
+      [{ type: "text", text: "same" }, image]);
+  } finally { await f.close(); }
+});
+
+test("native image omission hints replace invalid images before provider submission", async () => {
+  const f = await fixture();
+  try {
+    await f.session.prompt([{ ...image, data: "R0lGODlh", mimeType: "image/gif" }]);
+    const user = f.inputs[0].find(message => message.role === "user");
+    assert.deepEqual(user.content.map(part => part.type), ["text"]);
+    assert.match(user.content[0].text, /Image omitted/);
+    assert.equal(f.session.isIdle, true);
+  } finally { await f.close(); }
+});
+
 test("passthrough hooks retain ordered content and native handled input does not execute a model", async () => {
   const f = await fixture({ extension(pi) {
     pi.on("input", event => event.text === "handled" ? { action: "handled" } : { action: "continue" });
@@ -170,7 +194,7 @@ test("a clean consumer installs the declared Pi SDK and uses the verified input 
     }
     run("npm", ["install", "--prefer-offline", "--ignore-scripts", "--no-audit", "--no-fund", ...artifacts], root);
     const installed = JSON.parse(run("npm", ["ls", "@earendil-works/pi-coding-agent", "--depth=1", "--json"], root));
-    assert.equal(installed.dependencies["@muha-sdk/pi-adapter"].dependencies["@earendil-works/pi-coding-agent"].version, "0.84.2");
+    assert.equal(installed.dependencies["@muha-sdk/pi-adapter"].dependencies["@earendil-works/pi-coding-agent"].version, "1.0.4");
     const source = `import assert from "node:assert/strict";
       import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
       import { createServer } from "node:http";

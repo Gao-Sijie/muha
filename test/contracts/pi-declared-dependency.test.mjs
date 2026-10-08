@@ -7,7 +7,7 @@ const packageRoot = new URL("../../packages/pi-adapter/", import.meta.url);
 
 test("Pi Adapter declares the pinned SDK without redistributing its dependency tree", async () => {
   const manifest = JSON.parse(await readFile(new URL("package.json", packageRoot), "utf8"));
-  assert.equal(manifest.dependencies["@earendil-works/pi-coding-agent"], "0.84.2");
+  assert.equal(manifest.dependencies["@earendil-works/pi-coding-agent"], "1.0.4");
   assert.equal(manifest.bundledDependencies, undefined);
   assert.equal(manifest.bundleDependencies, undefined);
 

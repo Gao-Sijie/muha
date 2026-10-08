@@ -4,7 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { controlledPi, nativePi, completedTurn } from "./support/controlled-pi.mjs";
 
-const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=";
+const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 test("Pi receives and persists interleaved file/base64 images in the consumer's order", async t => {
   const fixture = await controlledPi(t);
   const path = join(fixture.root, "pixel.png");
@@ -51,13 +51,13 @@ test("Pi forwards all four declared image media types and pure-image input witho
   const runtime = await fixture.runtime();
   const session = await runtime.createSession({ harness: "pi", workspacePath: fixture.workspace,
     model: "controlled/controlled", approvalPolicy: "autoApprove" });
-  // As in Core's media contract fixtures, the provider boundary checks byte
-  // transport/signatures, not full decoding or real-model visual perception.
+  // Pi 1.x decodes images before provider submission; use complete encodings
+  // while retaining the exact transport, ordering and persistence assertions.
   const media = [
     ["image/png", Buffer.from(png, "base64")],
-    ["image/jpeg", Buffer.from([255, 216, 255, 224, 0])],
-    ["image/gif", Buffer.from("GIF89a")],
-    ["image/webp", Buffer.from("RIFF0000WEBP")],
+    ["image/jpeg", Buffer.from("/9j/4AAQSkZJRgABAgAAAQABAAD/wAARCAABAAEDAREAAhEBAxEB/9sAQwAGBAUGBQQGBgUGBwcGCAoQCgoJCQoUDg8MEBcUGBgXFBYWGh0lHxobIxwWFiAsICMmJykqKRkfLTAtKDAlKCko/9sAQwEHBwcKCAoTCgoTKBoWGigoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgo/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD5UoA//9k=", "base64")],
+    ["image/gif", Buffer.from("R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==", "base64")],
+    ["image/webp", Buffer.from("UklGRhoAAABXRUJQVlA4TA4AAAAvAAAAEM1VICICEREJAA==", "base64")],
   ];
   const input = [];
   for (const [index, [mediaType, bytes]] of media.entries()) {

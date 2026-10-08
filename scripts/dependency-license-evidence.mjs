@@ -4,7 +4,7 @@
 const pi = {
   resource: "dist/PI-SDK-LICENSE",
   sha256: "4f6a1985796db5225e3b1e59972bd47e07a27a0748427cb3d3c8fbf39f9311f0",
-  source: "https://github.com/earendil-works/pi/blob/914cf1472e715297caa30db4b9535d534a9eb718/LICENSE",
+  source: "https://github.com/earendil-works/pi/blob/v1.0.4/LICENSE",
 };
 const aws = {
   resource: "dist/third-party-licenses/aws-sdk-3.972.39.LICENSE",
@@ -14,6 +14,12 @@ const aws = {
 const evidence = new Map([
   ...["pi-coding-agent", "pi-agent-core", "pi-ai", "pi-client", "pi-protocol", "pi-telemetry", "pi-tui"]
     .map(name => [`@earendil-works/${name}@0.84.2`, pi]),
+  ...["chord", "pi-agent-core", "pi-ai", "pi-codemode", "pi-mcp", "pi-telemetry", "pi-tui"]
+    .map(name => [`@earendil-works/${name}@1.1.0`, { ...pi, source: "https://github.com/earendil-works/pi/blob/v1.1.0/LICENSE" }]),
+  ["@earendil-works/pi-coding-agent@1.0.4", pi],
+  ["@aws-sdk/credential-provider-http@3.972.74", aws],
+  ["@aws-sdk/credential-provider-login@3.972.79", aws],
+  ["@aws-sdk/nested-clients@3.997.46", aws],
   ["@aws-sdk/credential-provider-http@3.972.39", aws],
   ["@aws-sdk/credential-provider-login@3.972.41", aws],
   ["@aws-sdk/nested-clients@3.997.9", aws],

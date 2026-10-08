@@ -7,9 +7,9 @@ export async function bindExtensions(session, shutdownTimeoutMs, isInterrupted =
   // intentionally return void. Its preflight hooks can still be awaiting when
   // isIdle is true, so observe the promises as well as the native idle boundary.
   session.prompt = (input, options) => {
-    const pending = nativePrompt(input, { ...options, preflightResult(ok) {
-      if (ok && isInterrupted()) throw new Error("Pi prompt interrupted during preflight");
-      options?.preflightResult?.(ok);
+    const pending = nativePrompt(input, { ...options, preflightResult(disposition) {
+      if (["started", "handled", "queued"].includes(disposition) && isInterrupted()) throw new Error("Pi prompt interrupted during preflight");
+      options?.preflightResult?.(disposition);
     } });
     prompts.add(pending);
     pending.then(() => prompts.delete(pending), error => {

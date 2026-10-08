@@ -31,7 +31,7 @@ test("the maintained package READMEs document supported hosts and Harness prereq
   }
   assert.equal(adapterReadmes.every((readme) => readme.includes("independently installed")), true);
   assert.ok(coreReadme.includes("scoped exception"));
-  assert.ok(piReadme.includes("@earendil-works/pi-coding-agent@0.84.2"));
+  assert.ok(piReadme.includes("@earendil-works/pi-coding-agent@1.0.4"));
   assert.ok(piReadme.includes("not a PATH"));
   assert.ok(piReadme.includes("native Pi authentication"));
 });

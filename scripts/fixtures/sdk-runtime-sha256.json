@@ -209,7 +209,7 @@
     },
     {
       "path": "packages/pi-adapter/scripts/build-sdk.mjs",
-      "sha256": "9270818ec1cb0ed27c780bfb3cd51e2fccb9d0df56fd34f2e980c948d9ac2a28"
+      "sha256": "93990c5af0ddc74d1ae0176a9e0e483811eb93214c5fd7b79a7205cbc4156059"
     },
     {
       "path": "packages/pi-adapter/src/index.ts",
@@ -229,7 +229,7 @@
     },
     {
       "path": "packages/pi-adapter/src/sdk-extensions.mjs",
-      "sha256": "8b8d78475c7a2f5b15ccd7e4edf34b29b6bc101a45e4703f3cdaa11293f2e134"
+      "sha256": "80896c0b0116e932b731eb219a339115e364c92b1079411727cad5107f222e56"
     },
     {
       "path": "packages/pi-adapter/src/sdk-loader.mjs",
@@ -249,7 +249,7 @@
     },
     {
       "path": "packages/pi-adapter/src/sdk-worker.mjs",
-      "sha256": "0c72ff2befca17b9817306d006f7ddd9cd847db4b310693aacaa4dd583d167f4"
+      "sha256": "566e96e8d8e83138e83e8829a31a683cd6b3710b225c18338413e6599209e20a"
     },
     {
       "path": "packages/pi-adapter/third-party-licenses/nodable-entities-2.1.0.LICENSE",
@@ -258,6 +258,31 @@
     {
       "path": "packages/pi-adapter/third-party-licenses/xml-naming-0.1.0.LICENSE",
       "sha256": "8e75fc0e776c62ccadb8178ece8d3daa9ba7601fb0a49b2dfb0ea9a7a5c0aa07"
+    }
+  ],
+  "requalifications": [
+    {
+      "harness": "pi",
+      "sdkVersion": "1.0.4",
+      "authorizationDate": "2026-10-08",
+      "status": "pending-real-model-validation",
+      "changedResources": [
+        {
+          "path": "packages/pi-adapter/scripts/build-sdk.mjs",
+          "sha256": "9270818ec1cb0ed27c780bfb3cd51e2fccb9d0df56fd34f2e980c948d9ac2a28",
+          "updatedSha256": "93990c5af0ddc74d1ae0176a9e0e483811eb93214c5fd7b79a7205cbc4156059"
+        },
+        {
+          "path": "packages/pi-adapter/src/sdk-extensions.mjs",
+          "sha256": "8b8d78475c7a2f5b15ccd7e4edf34b29b6bc101a45e4703f3cdaa11293f2e134",
+          "updatedSha256": "80896c0b0116e932b731eb219a339115e364c92b1079411727cad5107f222e56"
+        },
+        {
+          "path": "packages/pi-adapter/src/sdk-worker.mjs",
+          "sha256": "0c72ff2befca17b9817306d006f7ddd9cd847db4b310693aacaa4dd583d167f4",
+          "updatedSha256": "566e96e8d8e83138e83e8829a31a683cd6b3710b225c18338413e6599209e20a"
+        }
+      ]
     }
   ]
 }

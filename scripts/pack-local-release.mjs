@@ -9,6 +9,7 @@ import { auditLocalDelivery } from "./audit-local-delivery.mjs";
 import { assertPackedResourceMatches } from "./packed-resource.mjs";
 import { assertNoBundledDependencies } from "./redistribution-files.mjs";
 import { readReleaseSource } from "./release-source.mjs";
+import { readPublicationCandidate } from "./publication-candidate.mjs";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const manifests = await Promise.all(MUHA_DELIVERY_PACKAGES.map(async (delivery) => ({
@@ -23,14 +24,23 @@ const versions = new Set(manifests.map(({ manifest }) => manifest.version));
 if (versions.size !== 1) throw new Error("Official Muha packages must share one version");
 const [version] = versions;
 const args = process.argv.slice(2);
+const candidate = args[0] === "--candidate";
+if (candidate) args.shift();
 const preview = args[0] === "--preview";
 if (preview) args.shift();
+if (candidate && preview) throw new Error("A preview cannot be a publication candidate");
 if (preview && args.length === 0) throw new Error("A preview requires an explicit --output directory");
-const outputDirectory = parseOutputDirectory(args, version);
+const outputDirectory = parseOutputDirectory(args, version, candidate);
 await assertFinalTargetAvailable(outputDirectory);
 const source = await readReleaseSource(repositoryRoot);
 if (!preview && (source.revision === null || source.dirty)) {
   throw new Error("Candidate packing requires a clean committed source; use --preview --output for development checks");
+}
+if (candidate) {
+  const policy = spawnSync(process.execPath,
+    [join(repositoryRoot, "scripts/check-repository-policy.mjs"), repositoryRoot, "HEAD"],
+    { encoding: "utf8" });
+  if (policy.status !== 0) throw new Error(`Publication source policy failed: ${policy.stderr}`);
 }
 const audit = await auditLocalDelivery(repositoryRoot);
 if (audit.problems.length) throw new Error(`Delivery audit failed:\n${audit.problems.join("\n")}`);
@@ -43,9 +53,6 @@ const stagingDirectory = await mkdtemp(join(dirname(outputDirectory), ".muha-rel
 try {
   const packages = [];
   for (const { delivery, manifest } of manifests) {
-    if (manifest.private !== true) {
-      throw new Error(`${manifest.name} must remain private for local-only delivery`);
-    }
     const result = spawnSync(
       "npm",
       ["pack", "--json", "--pack-destination", stagingDirectory],
@@ -104,7 +111,9 @@ try {
       filename,
       sha256: createHash("sha256").update(bytes).digest("hex"),
       license: manifest.license,
+      integrity: `sha512-${createHash("sha512").update(bytes).digest("base64")}`,
       dependencies: manifest.dependencies ?? {},
+      files: packed[0].files.map(({ path, size, mode }) => ({ path, bytes: size, mode })),
       resources,
     });
   }
@@ -114,11 +123,11 @@ try {
     .sort();
   const filenames = Object.fromEntries(packages.map(({ name, filename }) => [name, filename]));
   const readmeTemplate = await readFile(
-    join(repositoryRoot, "scripts", "templates", "local-release-README.template.md"),
+    join(repositoryRoot, "scripts", "templates", candidate ? "npm-release-README.template.md" : "local-release-README.template.md"),
     "utf8",
   );
   const readme = renderTemplate(readmeTemplate, {
-    CANDIDATE_STATUS: preview ? "PREVIEW — not an acceptance candidate." : "Committed diagnostic build — not a release or consumer delivery.",
+    CANDIDATE_STATUS: preview ? "PREVIEW — not an acceptance candidate." : candidate ? "Committed npm publication candidate; not yet published or accepted from the registry." : "Committed diagnostic build — not a release or consumer delivery.",
     VERSION: version,
     CORE_FILENAME: requireFilename(filenames, "@muha-sdk/core"),
     CODEX_FILENAME: requireFilename(filenames, "@muha-sdk/codex-adapter"),
@@ -133,8 +142,8 @@ try {
   });
   await writeFile(join(stagingDirectory, "release.json"), `${JSON.stringify({
     version,
-    delivery: "diagnostic-npm-tarballs",
-    candidate: false,
+    delivery: candidate ? "public-npm-candidate" : "diagnostic-npm-tarballs",
+    candidate,
     source: { ...source, lockfileSha256: audit.lockfileSha256 },
     dependencies: { nodes: audit.dependencyClosure, edges: audit.dependencyEdges,
       packageHooks: audit.packageHooks, licenseBlockers: audit.licenseBlockers,
@@ -152,6 +161,12 @@ try {
   if (JSON.stringify(actualEntries) !== JSON.stringify(expectedEntries)) {
     throw new Error(`Unexpected staged release contents: ${actualEntries.join(", ")}`);
   }
+  if (candidate) {
+    await readPublicationCandidate(stagingDirectory, {
+      revision: source.revision, version,
+      manifestSha256: createHash("sha256").update(await readFile(join(stagingDirectory, "release.json"))).digest("hex"),
+    });
+  }
 
   const finalSource = await readReleaseSource(repositoryRoot);
   const finalLockSha256 = createHash("sha256").update(await readFile(join(repositoryRoot, "package-lock.json"))).digest("hex");
@@ -167,12 +182,12 @@ try {
   throw error;
 }
 
-function parseOutputDirectory(args, version) {
-  if (args.length === 0) return join(repositoryRoot, "dist", `v${version}`);
+function parseOutputDirectory(args, version, candidate) {
+  if (args.length === 0) return join(repositoryRoot, "dist", `v${version}${candidate ? "-candidate" : ""}`);
   if (args.length === 2 && args[0] === "--output" && args[1].length > 0) {
     return resolve(repositoryRoot, args[1]);
   }
-  throw new Error("Usage: pack-local-release.mjs [--preview] [--output <directory>]");
+  throw new Error("Usage: pack-local-release.mjs [--candidate | --preview] [--output <directory>]");
 }
 
 async function assertFinalTargetAvailable(path) {
