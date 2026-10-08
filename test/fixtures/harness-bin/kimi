@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, rename, writeFile } from "node:fs/promises";
 
 const expectedArgs = ["web", "--no-open", "--host", "127.0.0.1", "--port", "0"];
 if (JSON.stringify(process.argv.slice(2)) !== JSON.stringify(expectedArgs)) {
@@ -31,6 +31,7 @@ const evidence = {
 const workspaces = new Map();
 const sessions = new Map();
 const sockets = new Set();
+const snapshotWrites = new Map();
 let nextWorkspace = 1;
 let nextSession = 1;
 let nextPrompt = 1;
@@ -1036,17 +1037,31 @@ function json(response, status, value) {
 }
 
 async function persistEvidence() {
-  if (evidenceFile) await writeFile(evidenceFile, JSON.stringify(evidence));
+  await persistSnapshot(evidenceFile, evidence);
+}
+
+// HTTP and WebSocket callbacks can overlap. Readers must see a complete,
+// ordered snapshot rather than a file truncated by another pending write.
+async function persistSnapshot(path, value) {
+  if (!path) return;
+  const snapshot = JSON.stringify(value);
+  const pending = (snapshotWrites.get(path) ?? Promise.resolve()).then(async () => {
+    const staged = `${path}.next`;
+    await writeFile(staged, snapshot);
+    await rename(staged, path);
+  });
+  snapshotWrites.set(path, pending);
+  await pending;
 }
 
 async function persistSessions() {
   if (!sessionsFile) return;
-  await writeFile(sessionsFile, JSON.stringify([...sessions.values()].map((session) => ({
+  await persistSnapshot(sessionsFile, [...sessions.values()].map((session) => ({
     id: session.id,
     workspacePath: session.workspace.root,
     title: session.title,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
     ...(session.model ? { model: session.model } : {}),
-  }))));
+  })));
 }
