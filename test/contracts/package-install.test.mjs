@@ -9,6 +9,11 @@ import test from "node:test";
 import { controlledPi } from "../../packages/pi-adapter/test/support/controlled-pi.mjs";
 
 const repositoryRoot = resolve(import.meta.dirname, "../..");
+const registryVersion = process.env.MUHA_PUBLIC_REGISTRY_VERSION;
+// The consumer owns its npm policy. Approvals pin only the reviewed hook versions;
+// they do not propagate through the published Muha package manifests.
+const reviewedInstallScripts = JSON.parse(await readFile(join(repositoryRoot, "package.json"), "utf8")).allowScripts;
+if (registryVersion && !/^\d+\.\d+\.\d+$/.test(registryVersion)) throw new Error("Invalid public Registry version");
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     encoding: "utf8",
@@ -54,7 +59,12 @@ test("an isolated fixture can install Core and all five official Adapters", asyn
   try {
     await Promise.all([mkdir(artifacts), mkdir(consumer), mkdir(dependencyStaging)]);
     let tarballs;
-    if (process.env.MUHA_RELEASE_DIRECTORY) {
+    if (registryVersion) {
+      isolatedEnvironment.npm_config_registry = "https://registry.npmjs.org/";
+      isolatedEnvironment.npm_config_cache = join(root, "cold-npm-cache");
+      isolatedEnvironment.npm_config_userconfig = join(root, "anonymous.npmrc");
+      tarballs = ["@muha-sdk/core", ...adapters.map(([, name]) => name)].map(name => `${name}@${registryVersion}`);
+    } else if (process.env.MUHA_RELEASE_DIRECTORY) {
       const releaseDirectory = resolve(process.env.MUHA_RELEASE_DIRECTORY);
       const release = JSON.parse(await readFile(join(releaseDirectory, "release.json"), "utf8"));
       assert.equal(release.packages.length, 6, "release must contain exactly six Muha SDK packages");
@@ -99,19 +109,19 @@ test("an isolated fixture can install Core and all five official Adapters", asyn
     assert.equal(
       tarballs.filter((path) => {
         const name = basename(path);
-        return name.startsWith("muha-sdk-") || name.startsWith("muha-orchestrator-");
+        return path.startsWith("@muha-sdk/") || name.startsWith("muha-sdk-") || name.startsWith("muha-orchestrator-");
       }).length,
       6,
     );
     await writeFile(
       join(consumer, "package.json"),
-      JSON.stringify({ private: true, type: "module" }),
+      JSON.stringify({ private: true, type: "module", ...(registryVersion ? { allowScripts: reviewedInstallScripts } : {}) }),
     );
     try { run(
       "npm", [
         "install",
-        "--prefer-offline",
-        "--no-package-lock",
+        registryVersion ? "--prefer-online" : "--prefer-offline",
+        ...(registryVersion ? ["--save-exact"] : ["--no-package-lock"]),
         ...tarballs,
       ],
       { cwd: consumer, env: isolatedEnvironment },
@@ -120,6 +130,7 @@ test("an isolated fixture can install Core and all five official Adapters", asyn
         `cache ${isolatedEnvironment.npm_config_cache ?? "npm default"}, registry configured: ${Boolean(process.env.npm_config_registry)}): ` +
         error.message, { cause: error });
     }
+    if (registryVersion) await verifyRegistryLockAndReinstall(consumer, isolatedEnvironment, ["@muha-sdk/core", ...adapters.map(([, name]) => name)]);
     const installedCorePaths = run("npm", ["ls", "@muha-sdk/core", "--all", "--parseable"], {
       cwd: consumer, env: isolatedEnvironment,
     }).trim().split(/\r?\n/).filter(Boolean);
@@ -179,41 +190,48 @@ async function verifyConsumerInstall(adapterDirectory, adapterPackage, factory) 
 
   try {
     await Promise.all([mkdir(artifacts), mkdir(consumer), mkdir(dependencyStaging)]);
-    for (const packageDirectory of ["core", adapterDirectory]) {
-      run(
-        "npm",
-        ["pack", "--pack-destination", artifacts],
-        {
-          cwd: join(repositoryRoot, "packages", packageDirectory),
+    let tarballs;
+    if (registryVersion) {
+      isolatedEnvironment.npm_config_registry = "https://registry.npmjs.org/";
+      isolatedEnvironment.npm_config_userconfig = join(root, "anonymous.npmrc");
+      tarballs = [`@muha-sdk/core@${registryVersion}`, `${adapterPackage}@${registryVersion}`];
+    } else {
+      for (const packageDirectory of ["core", adapterDirectory]) {
+        run(
+          "npm",
+          ["pack", "--pack-destination", artifacts],
+          {
+            cwd: join(repositoryRoot, "packages", packageDirectory),
+            env: isolatedEnvironment,
+          },
+        );
+      }
+      for (const [index, dependencyDirectory] of (
+        adapterDirectory === "pi-adapter" ? [] : await runtimeDependencyDirectories(["core", adapterDirectory])
+      ).entries()) {
+        const stagingDirectory = join(dependencyStaging, String(index));
+        await cp(dependencyDirectory, stagingDirectory, { recursive: true });
+        const packageJsonPath = join(stagingDirectory, "package.json");
+        const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8"));
+        delete packageJson.scripts;
+        delete packageJson.devEngines;
+        delete packageJson.packageManager;
+        await writeFile(packageJsonPath, JSON.stringify(packageJson));
+        run("npm", ["pack", "--pack-destination", artifacts], {
+          cwd: stagingDirectory,
           env: isolatedEnvironment,
-        },
+        });
+      }
+
+      tarballs = (await readdir(artifacts))
+        .filter((entry) => entry.endsWith(".tgz"))
+        .map((entry) => join(artifacts, entry));
+      assert.equal(
+        tarballs.filter((path) => path.includes("muha-sdk-")).length,
+        2,
       );
     }
-    for (const [index, dependencyDirectory] of (
-      adapterDirectory === "pi-adapter" ? [] : await runtimeDependencyDirectories(["core", adapterDirectory])
-    ).entries()) {
-      const stagingDirectory = join(dependencyStaging, String(index));
-      await cp(dependencyDirectory, stagingDirectory, { recursive: true });
-      const packageJsonPath = join(stagingDirectory, "package.json");
-      const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8"));
-      delete packageJson.scripts;
-      delete packageJson.devEngines;
-      delete packageJson.packageManager;
-      await writeFile(packageJsonPath, JSON.stringify(packageJson));
-      run("npm", ["pack", "--pack-destination", artifacts], {
-        cwd: stagingDirectory,
-        env: isolatedEnvironment,
-      });
-    }
-
-    const tarballs = (await readdir(artifacts))
-      .filter((entry) => entry.endsWith(".tgz"))
-      .map((entry) => join(artifacts, entry));
-    assert.equal(
-      tarballs.filter((path) => path.includes("muha-sdk-")).length,
-      2,
-    );
-    if (adapterDirectory === "opencode-adapter") {
+    if (!registryVersion && adapterDirectory === "opencode-adapter") {
       const adapterTarball = tarballs.find((path) => basename(path).startsWith("muha-sdk-opencode-adapter-"));
       assert.ok(adapterTarball);
       const entries = run("tar", ["-tzf", adapterTarball]).trim().split("\n");
@@ -223,20 +241,21 @@ async function verifyConsumerInstall(adapterDirectory, adapterPackage, factory) 
 
     await writeFile(
       join(consumer, "package.json"),
-      JSON.stringify({ private: true, type: "module" }),
+      JSON.stringify({ private: true, type: "module", ...(registryVersion ? { allowScripts: reviewedInstallScripts } : {}) }),
     );
     run(
       "npm",
       [
         "install",
-        adapterDirectory === "pi-adapter" ? "--prefer-offline" : "--offline",
-        "--ignore-scripts",
-        "--no-package-lock",
+        registryVersion ? "--prefer-online" : adapterDirectory === "pi-adapter" ? "--prefer-offline" : "--offline",
+        ...(registryVersion ? [] : ["--ignore-scripts"]),
+        ...(registryVersion ? ["--save-exact"] : ["--no-package-lock"]),
         ...tarballs,
       ],
       { cwd: consumer, env: isolatedEnvironment },
     );
 
+    if (registryVersion) await verifyRegistryLockAndReinstall(consumer, isolatedEnvironment, ["@muha-sdk/core", adapterPackage]);
     await writeFile(
       join(consumer, "esm.mjs"),
       [
@@ -598,3 +617,45 @@ async function verifyInstalledWorkspace(consumer, isolatedEnvironment, harnesses
       env: isolatedEnvironment,
     });
 }
+
+
+async function verifyRegistryLockAndReinstall(consumer, env, names) {
+  const candidateDirectory = resolve(process.env.MUHA_REGISTRY_CANDIDATE ?? "");
+  assert.ok(process.env.MUHA_REGISTRY_CANDIDATE, "Reviewed candidate is required for Registry acceptance");
+  const candidate = JSON.parse(await readFile(join(candidateDirectory, "release.json"), "utf8"));
+  assert.equal(candidate.candidate, true);
+  const lockBytes = await readFile(join(consumer, "package-lock.json"));
+  const lock = JSON.parse(lockBytes);
+  for (const name of names) {
+    const installed = lock.packages[`node_modules/${name}`];
+    const reviewed = candidate.packages.find(item => item.name === name);
+    assert.equal(installed.version, registryVersion);
+    assert.equal(installed.integrity, reviewed.integrity, `${name}: public Registry bytes differ from reviewed artifact`);
+    assert.ok(installed.resolved.startsWith("https://registry.npmjs.org/"), `${name}: installation must resolve from the public Registry`);
+    assert.equal(installed.link, undefined);
+    for (const resource of reviewed.resources) {
+      const absolute = join(consumer, "node_modules", name, resource.path);
+      assert.equal(createHash("sha256").update(await readFile(absolute)).digest("hex"), resource.sha256);
+      if (resource.mode & 0o111) assert.ok((await lstat(absolute)).mode & 0o111);
+    }
+  }
+  assert.equal(lock.packages[""].overrides, undefined);
+  run("npm", ["ls", "--all"], { cwd: consumer, env });
+  await rm(join(consumer, "node_modules"), { recursive: true });
+  run("npm", ["ci", "--no-audit", "--no-fund"], { cwd: consumer, env });
+  assert.deepEqual(await readFile(join(consumer, "package-lock.json")), lockBytes, "npm ci must preserve the consumer lockfile");
+}
+
+if (registryVersion) test("Core alone installs from the public Registry and replays its exact lockfile", async () => {
+  const root = await mkdtemp(join(tmpdir(), "muha-registry-core-"));
+  const env = { ...process.env, npm_config_registry: "https://registry.npmjs.org/",
+    npm_config_cache: join(root, "cold-npm-cache"), npm_config_userconfig: join(root, "anonymous.npmrc") };
+  try {
+    await writeFile(join(root, "package.json"), JSON.stringify({ private: true, type: "module", ...(registryVersion ? { allowScripts: reviewedInstallScripts } : {}) }));
+    run("npm", ["install", "--save-exact", "--no-audit", "--no-fund", `@muha-sdk/core@${registryVersion}`], { cwd: root, env });
+    await verifyRegistryLockAndReinstall(root, env, ["@muha-sdk/core"]);
+    run(process.execPath, ["--input-type=module", "-e", "import {createMuhaRuntime} from '@muha-sdk/core'; if(typeof createMuhaRuntime!=='function')throw new Error('Core ESM entry missing');"], { cwd: root });
+    await writeFile(join(root, "consumer.mts"), "import {createMuhaRuntime,type SessionReference} from '@muha-sdk/core';const create:typeof createMuhaRuntime=createMuhaRuntime;let reference:SessionReference;\n");
+    run(process.execPath, [join(repositoryRoot, "node_modules/typescript/bin/tsc"), "--noEmit", "--strict", "--target", "ES2022", "--module", "NodeNext", "--moduleResolution", "NodeNext", "consumer.mts"], { cwd: root });
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

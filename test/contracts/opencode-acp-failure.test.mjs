@@ -18,7 +18,8 @@ test("OpenCode ACP route interrupt settles the Turn exactly once with an interru
   let session;
   try {
     runtime = await createMuhaRuntime({
-      harnesses: [openCodeAdapter({ acp: acpOptions("normal") })],
+      // Keep the prompt pending until cancel; a 5ms echo can finish before interrupt under load.
+      harnesses: [openCodeAdapter({ acp: acpOptions("delayed-cancel") })],
       dataDir: join(root, "diagnostics"),
     });
     session = await runtime.createSession({ harness: "opencode", workspacePath: workspace });

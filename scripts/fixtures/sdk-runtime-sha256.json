@@ -265,7 +265,7 @@
       "harness": "pi",
       "sdkVersion": "1.0.4",
       "authorizationDate": "2026-10-08",
-      "status": "pending-real-model-validation",
+      "status": "PASS",
       "changedResources": [
         {
           "path": "packages/pi-adapter/scripts/build-sdk.mjs",
@@ -282,7 +282,27 @@
           "sha256": "0c72ff2befca17b9817306d006f7ddd9cd847db4b310693aacaa4dd583d167f4",
           "updatedSha256": "566e96e8d8e83138e83e8829a31a683cd6b3710b225c18338413e6599209e20a"
         }
-      ]
+      ],
+      "sourceRevision": "3385d373ac4bb5a5257fe52906192349d990b3e7",
+      "realAttempts": 17,
+      "attemptLimit": 20,
+      "models": {
+        "text": "opencode-go/deepseek-v4.1-flash",
+        "image": "opencode-go/qwen3.8-flash"
+      },
+      "recoveredFailures": [
+        {
+          "attempt": 16,
+          "recoveryAttempt": 17,
+          "nativeError": "Connection error."
+        }
+      ],
+      "controlled": {
+        "sdkPass": 480,
+        "sdkSkip": 2,
+        "piPass": 58
+      },
+      "lockfileSha256": "371efe86bdef3a4e309eebd02f3fc9137150d0744d565e3bf22702f74dbfc30c"
     }
   ]
 }

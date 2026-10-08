@@ -1,0 +1,144 @@
+name: sdk-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        type: choice
+        options: [prepare, publish]
+        default: prepare
+        required: true
+      revision:
+        description: Reviewed full main commit SHA
+        type: string
+        required: true
+      candidate_run:
+        description: Successful prepare run ID (publish only)
+        type: string
+      manifest_sha256:
+        description: Reviewed release.json SHA256 (publish only)
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdk-public-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: inputs.action == 'prepare' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '22.20.0'
+      - name: Require the reviewed main source
+        env:
+          REVIEWED_REVISION: ${{ inputs.revision }}
+        run: node scripts/release-workflow.mjs source
+      - run: npm install --global npm@11.15.0
+      - run: npm ci
+      - run: npm run check
+      - run: npm audit --omit=dev --audit-level=low
+      - run: node scripts/verify-sdk-source.mjs
+      - run: node scripts/pack-local-release.mjs --candidate --output .scratch/npm-candidate
+      - run: node scripts/release-workflow.mjs summary
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: npm-candidate
+          path: .scratch/npm-candidate/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    if: inputs.action == 'publish' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '22.20.0'
+          registry-url: https://registry.npmjs.org/
+      - name: Require reviewed source and prepared artifacts
+        env:
+          REVIEWED_REVISION: ${{ inputs.revision }}
+          CANDIDATE_RUN: ${{ inputs.candidate_run }}
+          REVIEWED_MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-workflow.mjs download
+      - run: npm install --global npm@11.15.0
+      - name: Upload exact tarballs with provenance and candidate tag
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
+          REVIEWED_REVISION: ${{ inputs.revision }}
+          REVIEWED_MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
+        run: node scripts/publish-public-release.mjs publish
+
+  registry-consumers:
+    needs: publish
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22.20.0', 'lts/*']
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm install --global npm@11.15.0
+      - name: Download the same reviewed cohort
+        env:
+          REVIEWED_REVISION: ${{ inputs.revision }}
+          CANDIDATE_RUN: ${{ inputs.candidate_run }}
+          REVIEWED_MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-workflow.mjs download
+      - run: npm ci
+      - run: npm run build --silent
+      - name: Cold public Registry installs and lockfile npm ci
+        env:
+          MUHA_PUBLIC_REGISTRY_VERSION: '0.1.13'
+          MUHA_REGISTRY_CANDIDATE: .scratch/npm-candidate
+        run: node --test --test-concurrency=2 test/contracts/package-install.test.mjs
+
+  promote:
+    needs: [publish, registry-consumers]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '22.20.0'
+          registry-url: https://registry.npmjs.org/
+      - name: Download the same reviewed cohort
+        env:
+          REVIEWED_REVISION: ${{ inputs.revision }}
+          CANDIDATE_RUN: ${{ inputs.candidate_run }}
+          REVIEWED_MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-workflow.mjs download
+      - run: npm install --global npm@11.15.0
+      - name: Promote all accepted exact versions to latest
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
+          REVIEWED_REVISION: ${{ inputs.revision }}
+          REVIEWED_MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
+        run: node scripts/publish-public-release.mjs promote

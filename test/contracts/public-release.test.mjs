@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { MUHA_DELIVERY_PACKAGES } from "../../scripts/delivery-manifest.mjs";
+import { validateRegistryProvenance } from "../../scripts/registry-provenance.mjs";
 import { validatePublicationManifest } from "../../scripts/publication-candidate.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
@@ -70,4 +71,35 @@ test("public registry metadata never makes the root workspace publishable", asyn
     assert.equal(manifest.bundledDependencies, undefined);
     assert.equal(manifest.bundleDependencies, undefined);
   }
+});
+
+
+test("publication entry rejects local execution before reading credentials or contacting npm", () => {
+  const result = spawnSync(process.execPath, [new URL("../../scripts/publish-public-release.mjs", import.meta.url).pathname, "publish"], {
+    encoding: "utf8", env: { PATH: process.env.PATH, GITHUB_ACTIONS: "false" },
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /reviewed GitHub-hosted source/);
+});
+
+// npm 11.15.0's GitHub SLSA v1 shape, with deliberate source/subject substitutions.
+test("Registry provenance rejects another package, bytes, source, workflow or runner", () => {
+  const item = { name: "@muha-sdk/core", version, integrity: "sha512-ZA==" };
+  const statement = {
+    _type: "https://in-toto.io/Statement/v1", predicateType: "https://slsa.dev/provenance/v1",
+    subject: [{ name: "pkg:npm/%40muha-sdk/core@0.1.13", digest: { sha512: "64" } }],
+    predicate: { buildDefinition: {
+      externalParameters: { workflow: { repository: "https://github.com/Gao-Sijie/muha", path: ".github/workflows/sdk-release.yml", ref: "refs/heads/main" } },
+      resolvedDependencies: [{ uri: "git+https://github.com/Gao-Sijie/muha@refs/heads/main", digest: { gitCommit: revision } }],
+    }, runDetails: { builder: { id: "https://github.com/actions/runner/github-hosted" } } },
+  };
+  const envelope = value => ({ attestations: [{ predicateType: "https://slsa.dev/provenance/v1", bundle: { dsseEnvelope: { payload: Buffer.from(JSON.stringify(value)).toString("base64") } } }] });
+  validateRegistryProvenance(envelope(statement), item, revision);
+  for (const alter of [
+    value => { value.subject[0].name = "pkg:npm/%40muha-sdk/pi-adapter@0.1.13"; },
+    value => { value.subject[0].digest.sha512 = "65"; },
+    value => { value.predicate.buildDefinition.resolvedDependencies[0].digest.gitCommit = "b".repeat(40); },
+    value => { value.predicate.buildDefinition.externalParameters.workflow.path = ".github/workflows/other.yml"; },
+    value => { value.predicate.runDetails.builder.id = "https://github.com/actions/runner/self-hosted"; },
+  ]) { const changed = structuredClone(statement); alter(changed); assert.throws(() => validateRegistryProvenance(envelope(changed), item, revision)); }
 });

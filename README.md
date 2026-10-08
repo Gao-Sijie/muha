@@ -51,3 +51,24 @@ checks the committed tree before installing dependencies.
 
 Start with [Core usage](packages/core/README.md), [qualification and exceptions](QUALIFICATION.md),
 [contributing](CONTRIBUTING.md), [security](SECURITY.md), and the [domain glossary](CONTEXT.md).
+
+## Release
+
+The manual [SDK release workflow](.github/workflows/sdk-release.yml) first runs
+the controlled checks on Ubuntu 22.04 / Node 22.20.0 / npm 11.15.0 and prepares a
+checksummed six-package candidate from the reviewed main commit. Publication
+requires its exact preparation run ID and `release.json` SHA256; it downloads
+those original tarballs and publishes Core first with npm provenance and the
+`candidate` tag. It stops on upload/readback errors so an immutable version is
+never retried blindly.
+
+Core alone, Core plus each Adapter, and all six packages are then installed from
+the public Registry with empty caches on the supported Node floor and LTS. Their
+Registry integrity, runtime resources, ESM/TypeScript contracts, dependency trees,
+lockfile `npm ci` and owned lifecycle fixtures must pass before all `latest` tags
+are promoted. The source tag and GitHub Release follow that acceptance.
+
+First-publication authentication uses the short-lived `NPM_PUBLISH_TOKEN` Actions
+secret with package/scope publishing rights. Once packages exist, trusted npm
+publishing is configured for the next actual release window; it is not inferred
+from a local npm login or an organization-management permission.

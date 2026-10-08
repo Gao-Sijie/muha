@@ -2,7 +2,7 @@
 
 The first functional version was accepted against source
 `8fa1a52aee74200e11c39e91c1ac7650bf31e1c4`. The migration source document baseline
-is `1c59b2d48f14ba508d3dafb93bb2e4455cdba6a1`; the unchanged Harnesses retain that baseline. Pi 1.0.4 adaptation is authorized and its bounded requalification is pending.
+is `1c59b2d48f14ba508d3dafb93bb2e4455cdba6a1`; the unchanged Harnesses retain that baseline. Pi 1.0.4 received separately authorized bounded requalification on 2026-10-08.
 [Sorted SHA256 manifest](scripts/fixtures/sdk-runtime-sha256.json) maps the six packages only.
 The former whole packages-tree fingerprint included private Orchestrator and
 cannot identify this SDK tree. Raw evidence is retained privately.
@@ -13,7 +13,7 @@ cannot identify this SDK tree. Raw evidence is retained privately.
 | OpenCode | v2 native serve | 2.0.11 | `opencode-go/deepseek-v4.1-flash` |
 | Kimi | native web | 2.1.1 | `deepseek/deepseek-flash` |
 | AGY | native CLI | 1.2.14 | `claude-sonnet-4-6` |
-| Pi | patched SDK | 0.84.2 | text/non-image and both Pi/Pi roles: `opencode-go/deepseek-v4.1-flash`; image: `opencode-go/qwen3.8-flash` |
+| Pi | patched SDK | 1.0.4 (internal dependency packages 1.1.0) | text/non-image: `opencode-go/deepseek-v4.1-flash`; image: `opencode-go/qwen3.8-flash` |
 
 Codex/Luna reasoning text: three probes remained `NOT_TRIGGERED` (zero deltas);
 first-version disposition is user-approved `WAIVED`, not PASS. The native stream
@@ -28,7 +28,7 @@ The Official Harness Set is Codex, OpenCode, Kimi, AGY and Pi. Each immutable
 Harness Capability Profile remains enforced; unsupported calls return
 `UNSUPPORTED_CAPABILITY`. `harnessManaged` preserves native permission behavior.
 Private Orchestrator's `HARNESS_CAPABILITY_MISMATCH` checks are tested separately.
-Pi/Pi qualification completed 17 rounds/35 Turns under a 50-round cap, with one
+The historical Pi 0.84.2 / private Orchestrator Pi/Pi qualification completed 17 rounds/35 Turns under a 50-round cap, with one
 provider connection failure recovered by the opted-in three-retry budget. Default
 Turn Retry Policy is unchanged; network recovery is not a new feature claim.
 
@@ -47,3 +47,41 @@ Any future behavior/loading/dependency change must enumerate affected units,
 cost and bounded real-model requalification, then obtain authorization before
 reusing that unit's evidence. Public-history review, visibility approval, npm
 scope/version/publication and Registry install/lockfile `npm ci` are later gates.
+
+## Pi 1.0.4 requalification (2026-10-08)
+
+The authorized runtime candidate is `3385d373ac4bb5a5257fe52906192349d990b3e7`.
+Only Pi's verified input-patch build, SDK worker and extension preflight bridge
+change among the 64 runtime resources. Core and the four other Harness runtime
+digests retain their accepted source; their paid matrix was not repeated.
+
+Controlled verification: SDK 480 PASS / 2 opt-in SKIP; Pi 58 PASS. A cold-cache
+consumer installed Core and Pi with normal install flags and no root overrides,
+then initialized and closed its owned Runtime. A separate npm 11.16.0 run
+explicitly approved only reviewed dependency versions in the consumer project,
+executed their install hooks, deleted node_modules and reproduced its lockfile
+with npm ci. These approvals belong to the consumer; dependency manifests do
+not grant npm script approvals. The production registry advisory
+audit reported zero vulnerabilities. License texts, exact install hooks, packed
+workers and native ABI guards were checked independently.
+
+Real qualification used 17 attempts under the approved 20-attempt, 120-second
+per-attempt, 45-minute, concurrency-one limits. Native retries and cache warming
+were disabled in the owned qualification profile. Text and reasoning deltas,
+usage, native tools/file effects, Workspace Skills, model/effort selections,
+listing and new-Runtime history, externally created native history, interleaved
+file/base64 and pure-image input, image pixels and persisted order, interruption,
+provider rejection/recovery, SDK process loss/group reclamation and private
+host-owned diagnostics passed. Attempt 16 failed with native `Connection error.`;
+the explicitly counted reserve attempt 17 recovered. Failure evidence remains
+private; it is not rewritten as an initial success.
+
+The runner's missing native route on an external Session Reference was corrected
+without resetting its attempt ledger. No private Orchestrator or Pi/Pi grilling
+was rerun; its old SDK conclusion remains historical. GitHub/npm publication and
+cold public-Registry consumer acceptance are separate pending release gates.
+
+Release preparation additionally passed SDK 482 tests / 2 opt-in skips and all
+58 Pi controlled tests, including publication/provenance rejection cases. Only
+the test runner concurrency and two OpenCode fixture timing conditions changed;
+qualified non-Pi runtime digests and the dependency lockfile remain unchanged.

@@ -248,7 +248,8 @@ test("OpenCode v2 rejects a missing ordered-input plugin before creating a nativ
           MUHA_V2_EVIDENCE_FILE: evidenceFile,
           MUHA_V2_PLUGIN_STATE: "missing",
         },
-        startupTimeoutMs: 250,
+        // This case verifies missing-plugin rejection, not a subsecond process-start deadline.
+        startupTimeoutMs: 2_000,
       })],
       dataDir: join(root, "diagnostics"),
     });
