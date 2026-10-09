@@ -86,7 +86,7 @@ Release preparation additionally passed SDK 482 tests / 2 opt-in skips and all
 the test runner concurrency and readiness/cancellation fixture timing conditions changed;
 qualified non-Pi runtime digests and the dependency lockfile remain unchanged.
 
-## Pi lifecycle follow-up (2026-10-09, pending)
+## Pi lifecycle requalification (2026-10-09)
 
 Release CI exposed a race between detached Bash creation and the SDK's process
 identity notification. A deterministic scheduling pause reproduces the leak.
@@ -98,8 +98,21 @@ cleanup timeout reports failure without claiming reclamation. Core, the C helper
 other Harnesses, input semantics and the dependency lockfile remain unchanged.
 
 The earlier 17-attempt receipt qualifies the preceding Pi source. The updated
-lifecycle has a separate PENDING entry and blocks publication despite that earlier
-PASS. Proposed follow-up: four planned Turns across native Bash interruption,
-continuation, active SDK loss and new-Runtime history/recovery, plus one reserve
-attempt, 120 seconds each, ten minutes overall, concurrency one. Paid execution
-requires authorization for this new bounded run; its ledger remains separate.
+lifecycle candidate `6a1983a83a62a0ed8d03ef9ed441b5084074b4e2` received
+separately authorized real-model verification using
+`opencode-go/deepseek-v4.1-flash`. All four planned attempts passed within the
+five-attempt, 120-second-per-attempt, ten-minute, concurrency-one limits, taking
+about 26 seconds. No reserve attempt was used; native retries and cache warming
+were disabled. Native Bash interruption, continuation in the same Session,
+active SDK loss with fatal Runtime closure and detached-process reclamation,
+and history recovery in a new Runtime passed. Both host-owned diagnostic stores
+contain SDK callbacks; temporary credential copies were removed and the original
+credentials and 17-attempt ledger remained unchanged.
+
+Controlled verification: SDK 483 PASS / 2 opt-in SKIP, Pi 60 PASS. The same runtime
+source passed all three GitHub Node jobs (22.20.0, LTS and current), including the
+fixed spawn-pause regression and ownership-helper loss reporting. Only Pi units
+listed in the latest manifest entry changed; the other Harnesses, Core, C helper,
+input patch and dependency lockfile retain their accepted digests. Publication
+requires the latest Pi entry to pass; a historical PASS cannot qualify a newly
+pending runtime. Public Registry acceptance remains a separate release gate.

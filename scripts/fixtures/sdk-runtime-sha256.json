@@ -307,7 +307,7 @@
     {
       "harness": "pi",
       "sdkVersion": "1.0.4",
-      "status": "PENDING",
+      "status": "PASS",
       "reason": "Independent subreaper eliminates detached-child ownership notification race",
       "changedResources": [
         {
@@ -336,14 +336,10 @@
           "updatedSha256": null
         }
       ],
-      "realAttempts": 0,
-      "proposedAttemptLimit": 5,
-      "proposedTotalMinutes": 10,
-      "proposedPerAttemptSeconds": 120,
+      "realAttempts": 4,
       "concurrency": 1,
       "models": {
-        "text": "opencode-go/deepseek-v4.1-flash",
-        "image": "opencode-go/qwen3.8-flash"
+        "text": "opencode-go/deepseek-v4.1-flash"
       },
       "controlled": {
         "sdkPass": 483,
@@ -351,7 +347,21 @@
         "piPass": 60,
         "nodeCurrentLifecyclePass": 10,
         "nodeCurrentVersion": "26.11.1"
-      }
+      },
+      "authorizationDate": "2026-10-09",
+      "sourceRevision": "6a1983a83a62a0ed8d03ef9ed441b5084074b4e2",
+      "attemptLimit": 5,
+      "totalMinutesLimit": 10,
+      "perAttemptSecondsLimit": 120,
+      "elapsedMs": 25499,
+      "checks": [
+        "native-bash-interrupt",
+        "continue-same-session",
+        "active-sdk-loss-runtime-fatal-close",
+        "detached-group-reclamation",
+        "new-runtime-native-history-recovery"
+      ],
+      "lockfileSha256": "371efe86bdef3a4e309eebd02f3fc9137150d0744d565e3bf22702f74dbfc30c"
     }
   ]
 }
