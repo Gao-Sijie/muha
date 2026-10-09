@@ -1,4 +1,3 @@
-import "./sdk-process-ownership.mjs";
 import { loadSdk } from "./sdk-loader.mjs";
 import { listedSessions, openNativeSession } from "./sdk-sessions.mjs";
 import { sessionSettings, resolveModel, selection, selectEffort } from "./sdk-settings.mjs";

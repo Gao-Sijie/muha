@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
@@ -73,7 +74,10 @@ test("Pi Session close reaps descendants even when the SDK process exits normall
     model: "controlled/controlled", approvalPolicy: "autoApprove" });
   const pid = Number(await readFile(pidFile, "utf8"));
   t.after(() => { try { process.kill(pid, "SIGKILL"); } catch {} });
+  const unrelated = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+  t.after(() => unrelated.kill("SIGKILL"));
   await session.close();
+  assert.doesNotThrow(() => process.kill(unrelated.pid, 0), "Closing Pi must leave unrelated host children alive");
   // Linux may retain a killed orphan briefly as a zombie until init reaps it.
   let stopped = false;
   for (let attempt = 0; attempt < 50; attempt++) {
@@ -84,43 +88,62 @@ test("Pi Session close reaps descendants even when the SDK process exits normall
   assert.ok(stopped, "Owned descendant is still executing after Session.close");
 });
 
-test("Pi fatal SDK loss reclaims an active native Bash tool's detached process group", { timeout: 15000 }, async t => {
-  const fixture = await controlledPi(t, (_request, response) => {
-    response.writeHead(200, { "Content-Type": "text/event-stream" });
-    response.end(`data: ${JSON.stringify({ id: "bash", object: "chat.completion.chunk", created: 1, model: "controlled",
-      choices: [{ index: 0, delta: { role: "assistant", tool_calls: [{ index: 0, id: "bash-1", type: "function",
-        function: { name: "bash", arguments: JSON.stringify({ command: "echo $$ > bash.pid; sleep 60" }) } }] },
-      finish_reason: "tool_calls" }] })}\n\ndata: [DONE]\n\n`);
+for (const delayedSpawn of [false, true]) {
+  test(`Pi fatal SDK loss reclaims an active native Bash tool's detached process group${delayedSpawn ? " before child identity can be reported" : ""}`, { timeout: 15000 }, async t => {
+    const fixture = await controlledPi(t, (_request, response) => {
+      response.writeHead(200, { "Content-Type": "text/event-stream" });
+      response.end(`data: ${JSON.stringify({ id: "bash", object: "chat.completion.chunk", created: 1, model: "controlled",
+        choices: [{ index: 0, delta: { role: "assistant", tool_calls: [{ index: 0, id: "bash-1", type: "function",
+          function: { name: "bash", arguments: JSON.stringify({ command: "echo $$ > bash.pid; sleep 60" }) } }] },
+        finish_reason: "tool_calls" }] })}\n\ndata: [DONE]\n\n`);
+    });
+    if (delayedSpawn) {
+      // Model a scheduler pause after the child exists but before the SDK regains
+      // control. Reclamation must not depend on a post-spawn PID notification.
+      const preload = join(fixture.root, "pause-after-spawn.mjs");
+      await writeFile(preload, `
+        import { ChildProcess } from "node:child_process";
+        const spawn = ChildProcess.prototype.spawn;
+        ChildProcess.prototype.spawn = function (options) {
+          const result = Reflect.apply(spawn, this, [options]);
+          if (options.detached && this.pid) {
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200);
+          }
+          return result;
+        };
+      `);
+      fixture.options.env.NODE_OPTIONS = `--import=${pathToFileURL(preload).href}`;
+    }
+    await mkdir(join(fixture.agentDir, "extensions"));
+    const sdkPidFile = join(fixture.root, "sdk.pid");
+    await writeFile(join(fixture.agentDir, "extensions", "identity.ts"), `
+      import { writeFileSync } from "node:fs";
+      export default pi => pi.on("session_start", () => writeFileSync(${JSON.stringify(sdkPidFile)}, String(process.pid)));
+    `);
+    const runtime = await fixture.runtime();
+    const session = await runtime.createSession({ harness: "pi", workspacePath: fixture.workspace,
+      model: "controlled/controlled", approvalPolicy: "autoApprove" });
+    const turn = await session.startTurn([{ type: "text", text: "Run the waiting tool" }]);
+    let bashPid;
+    for (let attempt = 0; attempt < 200 && !bashPid; attempt++) {
+      try { bashPid = Number(await readFile(join(fixture.workspace, "bash.pid"), "utf8")); }
+      catch (error) { if (error.code !== "ENOENT") throw error; }
+      if (!bashPid) await delay(10);
+    }
+    assert.ok(bashPid > 1, "Native Bash tool did not start");
+    t.after(() => { try { process.kill(-bashPid, "SIGKILL"); } catch {} });
+    process.kill(Number(await readFile(sdkPidFile, "utf8")), "SIGKILL");
+    assert.equal((await turn.result).status, "failed");
+    await runtime.close();
+    let stopped = false;
+    for (let attempt = 0; attempt < 50; attempt++) {
+      stopped = await hasProcessStopped(bashPid);
+      if (stopped) break;
+      await delay(10);
+    }
+    assert.ok(stopped, "Native detached Bash remains running after fatal Runtime close");
   });
-  await mkdir(join(fixture.agentDir, "extensions"));
-  const sdkPidFile = join(fixture.root, "sdk.pid");
-  await writeFile(join(fixture.agentDir, "extensions", "identity.ts"), `
-    import { writeFileSync } from "node:fs";
-    export default pi => pi.on("session_start", () => writeFileSync(${JSON.stringify(sdkPidFile)}, String(process.pid)));
-  `);
-  const runtime = await fixture.runtime();
-  const session = await runtime.createSession({ harness: "pi", workspacePath: fixture.workspace,
-    model: "controlled/controlled", approvalPolicy: "autoApprove" });
-  const turn = await session.startTurn([{ type: "text", text: "Run the waiting tool" }]);
-  let bashPid;
-  for (let attempt = 0; attempt < 200 && !bashPid; attempt++) {
-    try { bashPid = Number(await readFile(join(fixture.workspace, "bash.pid"), "utf8")); }
-    catch (error) { if (error.code !== "ENOENT") throw error; }
-    if (!bashPid) await delay(10);
-  }
-  assert.ok(bashPid > 1, "Native Bash tool did not start");
-  t.after(() => { try { process.kill(-bashPid, "SIGKILL"); } catch {} });
-  process.kill(Number(await readFile(sdkPidFile, "utf8")), "SIGKILL");
-  assert.equal((await turn.result).status, "failed");
-  await runtime.close();
-  let stopped = false;
-  for (let attempt = 0; attempt < 50; attempt++) {
-    stopped = await hasProcessStopped(bashPid);
-    if (stopped) break;
-    await delay(10);
-  }
-  assert.ok(stopped, "Native detached Bash remains running after fatal Runtime close");
-});
+}
 
 test("losing a Pi worker during Session creation closes the Runtime and interrupts other Turns", { timeout: 10000 }, async t => {
   const fixture = await controlledPi(t, () => {});

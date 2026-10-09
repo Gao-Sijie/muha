@@ -85,3 +85,21 @@ Release preparation additionally passed SDK 482 tests / 2 opt-in skips and all
 58 Pi controlled tests, including publication/provenance rejection cases. Only
 the test runner concurrency and readiness/cancellation fixture timing conditions changed;
 qualified non-Pi runtime digests and the dependency lockfile remain unchanged.
+
+## Pi lifecycle follow-up (2026-10-09, pending)
+
+Release CI exposed a race between detached Bash creation and the SDK's process
+identity notification. A deterministic scheduling pause reproduces the leak.
+Pi now starts its SDK under the unchanged Linux subreaper shipped by its exact
+Core dependency, using separate ownership control and native Node IPC. Kernel
+adoption covers detached children even when the SDK dies before notifying Muha.
+Close succeeds only after the owner proves it has no children; helper loss or
+cleanup timeout reports failure without claiming reclamation. Core, the C helper,
+other Harnesses, input semantics and the dependency lockfile remain unchanged.
+
+The earlier 17-attempt receipt qualifies the preceding Pi source. The updated
+lifecycle has a separate PENDING entry and blocks publication despite that earlier
+PASS. Proposed follow-up: four planned Turns across native Bash interruption,
+continuation, active SDK loss and new-Runtime history/recovery, plus one reserve
+attempt, 120 seconds each, ten minutes overall, concurrency one. Paid execution
+requires authorization for this new bounded run; its ledger remains separate.

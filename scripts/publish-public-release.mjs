@@ -1,12 +1,14 @@
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { appendFile } from 'node:fs/promises';
+import { appendFile, readFile } from 'node:fs/promises';
+import { assertPiPublicationQualification } from './publication-qualification.mjs';
 import { readPublicationCandidate } from './publication-candidate.mjs';
 import { validateRegistryProvenance } from './registry-provenance.mjs';
 const registry='https://registry.npmjs.org/',version='0.1.13';
 const directory=new URL('../.scratch/npm-candidate/',import.meta.url).pathname;
 const revision=process.env.REVIEWED_REVISION;
 if(process.env.GITHUB_ACTIONS!=='true'||process.env.GITHUB_REPOSITORY!=='Gao-Sijie/muha'||process.env.GITHUB_REF!=='refs/heads/main'||process.env.GITHUB_SHA!==revision)throw new Error('Publication requires the reviewed GitHub-hosted source');
+assertPiPublicationQualification(JSON.parse(await readFile(new URL('./fixtures/sdk-runtime-sha256.json',import.meta.url))));
 const candidate=await readPublicationCandidate(directory,{revision,version,manifestSha256:process.env.REVIEWED_MANIFEST_SHA256});
 const mode=process.argv[2];if(!['publish','promote'].includes(mode))throw new Error('Use publish or promote');
 if(!process.env.NODE_AUTH_TOKEN)throw new Error('Configure the short-lived NPM_PUBLISH_TOKEN repository secret first');

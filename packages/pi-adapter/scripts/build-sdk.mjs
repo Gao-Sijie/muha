@@ -75,7 +75,7 @@ if (process.argv.includes("--check")) {
       hash(await readFile(new URL("ordered-agent-session.mjs", output))) !== hash(patched)) {
     throw new Error("Pi SDK patch is missing or stale; build before packing");
   }
-  for (const name of ["sdk-loader.mjs", "sdk-worker.mjs", "sdk-sessions.mjs", "sdk-settings.mjs", "sdk-extensions.mjs", "sdk-process-ownership.mjs"]) {
+  for (const name of ["sdk-loader.mjs", "sdk-worker.mjs", "sdk-sessions.mjs", "sdk-settings.mjs", "sdk-extensions.mjs"]) {
     if (hash(await readFile(new URL(`../src/${name}`, import.meta.url))) !== hash(await readFile(new URL(name, output)))) {
       throw new Error(`Pi ${name} is stale; build before packing`);
     }
@@ -95,7 +95,6 @@ await copyChanged(new URL("../src/sdk-worker.mjs", import.meta.url), new URL("sd
 await copyChanged(new URL("../src/sdk-sessions.mjs", import.meta.url), new URL("sdk-sessions.mjs", output));
 await copyChanged(new URL("../src/sdk-settings.mjs", import.meta.url), new URL("sdk-settings.mjs", output));
 await copyChanged(new URL("../src/sdk-extensions.mjs", import.meta.url), new URL("sdk-extensions.mjs", output));
-await copyChanged(new URL("../src/sdk-process-ownership.mjs", import.meta.url), new URL("sdk-process-ownership.mjs", output));
 await copyChanged(new URL("../PI-SDK-LICENSE", import.meta.url), new URL("PI-SDK-LICENSE", output));
 await mkdir(new URL("third-party-licenses/", output), { recursive: true });
 for (const [sourcePath, destination] of licenseResources) {

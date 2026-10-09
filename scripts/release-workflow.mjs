@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import { readPublicationCandidate } from './publication-candidate.mjs';
+import { assertPiPublicationQualification } from './publication-qualification.mjs';
 const root=new URL('../',import.meta.url).pathname;
 const candidate=new URL('../.scratch/npm-candidate/',import.meta.url).pathname;
 const run=(cmd,args)=>{const r=spawnSync(cmd,args,{cwd:root,encoding:'utf8',maxBuffer:16*1024*1024,timeout:120000});if(r.status!==0)throw new Error(`${cmd}: ${r.stderr}`);return r.stdout.trim();};
@@ -13,7 +14,7 @@ function source(){
   return revision;
 }
 const qualification=JSON.parse(await readFile(new URL('./fixtures/sdk-runtime-sha256.json',import.meta.url)));
-if(!qualification.requalifications?.some(item=>item.harness==='pi'&&item.sdkVersion==='1.0.4'&&item.status==='PASS'))throw new Error('Pi 1.0.4 requalification is required');
+assertPiPublicationQualification(qualification);
 const mode=process.argv[2];
 if(mode==='source')source();
 else if(mode==='summary'){

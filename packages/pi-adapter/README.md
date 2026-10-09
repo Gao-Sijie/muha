@@ -100,3 +100,8 @@ missing/stale; it does not rewrite an SDK tree used by live processes. The
 resulting tarball contains the patch manifest, private workers and Pi upstream
 MIT license, but not the SDK dependency tree. npm installs the exact SDK version
 as an ordinary dependency. No consumer install script is needed.
+
+Owned SDK processes run under the Linux subreaper shipped by the exact Core
+dependency. Session and Runtime closure reclaim native detached Bash processes,
+including children whose PID the SDK has not yet reported. A lost ownership helper
+or cleanup timeout produces an error; it does not prove descendant reclamation.

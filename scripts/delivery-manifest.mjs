@@ -46,9 +46,9 @@ export const MUHA_DELIVERY_PACKAGES = Object.freeze([
     directory: "pi-adapter",
     artifactStem: "muha-sdk-pi-adapter",
     requiredFiles: Object.freeze([
-      "dist/index.js", "dist/pi-process.js", "dist/pi-events.js", "dist/pi-input.js",
+      "dist/index.js", "dist/pi-process.js", "dist/pi-owned-worker.js", "dist/pi-events.js", "dist/pi-input.js",
       "dist/sdk-worker.mjs", "dist/sdk-loader.mjs", "dist/sdk-sessions.mjs", "dist/sdk-settings.mjs",
-      "dist/sdk-extensions.mjs", "dist/sdk-process-ownership.mjs", "dist/ordered-agent-session.mjs", "dist/sdk-patch.json", "dist/PI-SDK-LICENSE",
+      "dist/sdk-extensions.mjs", "dist/ordered-agent-session.mjs", "dist/sdk-patch.json", "dist/PI-SDK-LICENSE",
       "dist/third-party-licenses/aws-sdk-3.972.39.LICENSE",
       "dist/third-party-licenses/data-uri-to-buffer-4.0.1.README.md",
       "dist/third-party-licenses/nodable-entities-2.1.0.LICENSE",

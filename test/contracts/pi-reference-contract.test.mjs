@@ -21,8 +21,8 @@ test("Pi references retain native identity and round-trip without a format marke
 
 test("Pi patched SDK and license resources ship intact with stable digests", async () => {
   const resources = [
-    "pi-process.js", "pi-events.js", "pi-input.js", "sdk-worker.mjs", "sdk-loader.mjs",
-    "sdk-sessions.mjs", "sdk-settings.mjs", "sdk-extensions.mjs", "sdk-process-ownership.mjs",
+    "pi-process.js", "pi-owned-worker.js", "pi-events.js", "pi-input.js", "sdk-worker.mjs", "sdk-loader.mjs",
+    "sdk-sessions.mjs", "sdk-settings.mjs", "sdk-extensions.mjs",
     "ordered-agent-session.mjs", "sdk-patch.json", "PI-SDK-LICENSE",
   ];
   const digest = await import("node:crypto").then(({ createHash }) => createHash);

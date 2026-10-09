@@ -1,6 +1,6 @@
-import { fork, type ChildProcess } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
+import { PiOwnedWorker } from "./pi-owned-worker.js";
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { PiEvents } from "./pi-events.js";
 import { piInput } from "./pi-input.js";
 import { MuhaError, type HarnessErrorData, type OfficialAdapterOptions } from "@muha-sdk/core";
@@ -59,7 +59,7 @@ class PiWorker {
   readonly #child: ChildProcess;
   readonly #pending = new Map<string, { operation: HarnessErrorData["operation"]; resolve(value: unknown): void; reject(error: Error): void; timer: NodeJS.Timeout | undefined }>();
   readonly #exited: Promise<void>;
-  readonly #detachedChildren = new Map<number, string>();
+  readonly #owner: PiOwnedWorker;
   #closing: Promise<void> | undefined;
   #queue: Promise<void> = Promise.resolve();
   #lostReported = false;
@@ -71,13 +71,13 @@ class PiWorker {
     for (const [key, value] of Object.entries(options.env ?? {})) {
       if (value === undefined) delete env[key]; else env[key] = value;
     }
-    this.#child = fork(new URL("sdk-worker.mjs", import.meta.url), [], {
-      env, detached: true, execArgv: [], stdio: ["ignore", "ignore", "ignore", "ipc"], serialization: "json",
-    });
-    this.#exited = new Promise(resolve => this.#child.once("close", () => {
+    this.#owner = new PiOwnedWorker(env, this.options.shutdownTimeoutMs ?? 5000,
+      message => this.#lost(message));
+    this.#child = this.#owner.child;
+    this.#exited = this.#owner.exited.then(() => {
       if (!this.#closing) this.#lost("Pi SDK process exited unexpectedly");
-      resolve();
-    }));
+    });
+    void this.#exited.catch(() => {});
     this.#child.on("error", error => this.#lost(error.message));
     this.#child.on("disconnect", () => { if (!this.#closing) this.#lost("Pi SDK control channel was lost"); });
     this.#child.on("message", message => {
@@ -115,14 +115,6 @@ class PiWorker {
   async #receive(raw: unknown): Promise<void> {
     if (raw === null || typeof raw !== "object") throw new Error("Malformed Pi SDK control message");
     const message = raw as Record<string, unknown>;
-    if (message.type === "owned-process") {
-      if (typeof message.pid !== "number" || !Number.isSafeInteger(message.pid) || message.pid <= 1 ||
-          typeof message.startTime !== "string" || !/^\d+$/.test(message.startTime)) {
-        throw new Error("Malformed Pi child process identity");
-      }
-      this.#detachedChildren.set(message.pid, message.startTime);
-      return;
-    }
     // Quarantine stops public normalization, not native evidence retention.
     // SDK abort/shutdown callbacks can still arrive during bounded close.
     if (message.type === "native") {
@@ -182,39 +174,14 @@ class PiWorker {
   }
   close(): Promise<void> {
     return this.#closing ??= (async () => {
-      const timeout = setTimeout(() => {
-        if (this.#child.pid) { try { process.kill(-this.#child.pid, "SIGKILL"); } catch {} }
-      }, this.options.shutdownTimeoutMs ?? 5000);
       try {
         if (this.#child.connected) this.#child.send({ command: "close" });
-        await this.#exited;
+        await this.#owner.close();
         await this.#queue;
         this.#lost("Pi SDK process closed");
-      } finally {
-        clearTimeout(timeout);
-        // Pi's native Bash tool starts its own detached group. Killing only
-        // the SDK group cannot reclaim it when the SDK itself is SIGKILLed.
-        for (const [pid, startTime] of this.#detachedChildren) {
-          try {
-            const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
-            if (stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19] !== startTime) continue;
-          } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-            // A group can survive its original leader. An absent leader has
-            // not been reused; its still-live group remains our resource.
-          }
-          try { process.kill(-pid, "SIGKILL"); }
-          catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
-        }
-        this.#detachedChildren.clear();
-        // Native extensions/tools can leave descendants after the SDK parent
-        // exits gracefully. Ownership ends only after reclaiming its group.
-        if (this.#child.pid) {
-          try { process.kill(-this.#child.pid, "SIGKILL"); }
-          catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-          }
-        }
+      } catch (error) {
+        this.#lost(error instanceof Error ? error.message : String(error));
+        throw error;
       }
     })();
   }

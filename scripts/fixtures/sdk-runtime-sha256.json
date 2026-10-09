@@ -209,7 +209,7 @@
     },
     {
       "path": "packages/pi-adapter/scripts/build-sdk.mjs",
-      "sha256": "93990c5af0ddc74d1ae0176a9e0e483811eb93214c5fd7b79a7205cbc4156059"
+      "sha256": "a6942901ef9ecd83e77cb27268a0c714f665ec5310218c23f42f3892973db953"
     },
     {
       "path": "packages/pi-adapter/src/index.ts",
@@ -224,8 +224,12 @@
       "sha256": "96ce7f4a3cc21f3867bf15449e27716edc58b3f0e416f3661cc8679ebac37891"
     },
     {
+      "path": "packages/pi-adapter/src/pi-owned-worker.ts",
+      "sha256": "083d44ae77da897f182b4b7b9951fda615d53c645e564dba2857ab2f3fbc5b6f"
+    },
+    {
       "path": "packages/pi-adapter/src/pi-process.ts",
-      "sha256": "0439f8e5fef3a939cc4bbc39742f9fe777e08558f0c2394d48b6ccc0eee1b80a"
+      "sha256": "ca1b1e9daa80a7e56c8e7b1b0cb343a4caacddf6a175e1bde68b6b14fe43ec50"
     },
     {
       "path": "packages/pi-adapter/src/sdk-extensions.mjs",
@@ -234,10 +238,6 @@
     {
       "path": "packages/pi-adapter/src/sdk-loader.mjs",
       "sha256": "e59bb7a113ced4c7e23a3e5afe0c409c6b93402186b6dca42f116a4d45065e55"
-    },
-    {
-      "path": "packages/pi-adapter/src/sdk-process-ownership.mjs",
-      "sha256": "87514bdb29e76defc0dc5df6e7a5b60bed8679e1cdc9e3533bac167ae0c4cf2a"
     },
     {
       "path": "packages/pi-adapter/src/sdk-sessions.mjs",
@@ -249,7 +249,7 @@
     },
     {
       "path": "packages/pi-adapter/src/sdk-worker.mjs",
-      "sha256": "566e96e8d8e83138e83e8829a31a683cd6b3710b225c18338413e6599209e20a"
+      "sha256": "fd1e2b30d712ee33da376dafc25c37eac6d8664adf6c4b484fd5ac22ab7d80ed"
     },
     {
       "path": "packages/pi-adapter/third-party-licenses/nodable-entities-2.1.0.LICENSE",
@@ -303,6 +303,55 @@
         "piPass": 58
       },
       "lockfileSha256": "371efe86bdef3a4e309eebd02f3fc9137150d0744d565e3bf22702f74dbfc30c"
+    },
+    {
+      "harness": "pi",
+      "sdkVersion": "1.0.4",
+      "status": "PENDING",
+      "reason": "Independent subreaper eliminates detached-child ownership notification race",
+      "changedResources": [
+        {
+          "path": "packages/pi-adapter/scripts/build-sdk.mjs",
+          "sha256": "93990c5af0ddc74d1ae0176a9e0e483811eb93214c5fd7b79a7205cbc4156059",
+          "updatedSha256": "a6942901ef9ecd83e77cb27268a0c714f665ec5310218c23f42f3892973db953"
+        },
+        {
+          "path": "packages/pi-adapter/src/pi-process.ts",
+          "sha256": "0439f8e5fef3a939cc4bbc39742f9fe777e08558f0c2394d48b6ccc0eee1b80a",
+          "updatedSha256": "ca1b1e9daa80a7e56c8e7b1b0cb343a4caacddf6a175e1bde68b6b14fe43ec50"
+        },
+        {
+          "path": "packages/pi-adapter/src/sdk-worker.mjs",
+          "sha256": "566e96e8d8e83138e83e8829a31a683cd6b3710b225c18338413e6599209e20a",
+          "updatedSha256": "fd1e2b30d712ee33da376dafc25c37eac6d8664adf6c4b484fd5ac22ab7d80ed"
+        },
+        {
+          "path": "packages/pi-adapter/src/pi-owned-worker.ts",
+          "sha256": null,
+          "updatedSha256": "083d44ae77da897f182b4b7b9951fda615d53c645e564dba2857ab2f3fbc5b6f"
+        },
+        {
+          "path": "packages/pi-adapter/src/sdk-process-ownership.mjs",
+          "sha256": "87514bdb29e76defc0dc5df6e7a5b60bed8679e1cdc9e3533bac167ae0c4cf2a",
+          "updatedSha256": null
+        }
+      ],
+      "realAttempts": 0,
+      "proposedAttemptLimit": 5,
+      "proposedTotalMinutes": 10,
+      "proposedPerAttemptSeconds": 120,
+      "concurrency": 1,
+      "models": {
+        "text": "opencode-go/deepseek-v4.1-flash",
+        "image": "opencode-go/qwen3.8-flash"
+      },
+      "controlled": {
+        "sdkPass": 483,
+        "sdkSkip": 2,
+        "piPass": 60,
+        "nodeCurrentLifecyclePass": 10,
+        "nodeCurrentVersion": "26.11.1"
+      }
     }
   ]
 }

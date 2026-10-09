@@ -103,3 +103,14 @@ test("Registry provenance rejects another package, bytes, source, workflow or ru
     value => { value.predicate.runDetails.builder.id = "https://github.com/actions/runner/self-hosted"; },
   ]) { const changed = structuredClone(statement); alter(changed); assert.throws(() => validateRegistryProvenance(envelope(changed), item, revision)); }
 });
+
+// Earlier PASS receipts cannot qualify a newly changed lifecycle implementation.
+test("publication refuses a pending Pi runtime even when its historical qualification passed", async () => {
+  const { assertPiPublicationQualification } = await import("../../scripts/publication-qualification.mjs");
+  const passed = { harness: "pi", sdkVersion: "1.0.4", status: "PASS" };
+  assert.doesNotThrow(() => assertPiPublicationQualification({ requalifications: [passed] }));
+  for (const status of ["PENDING", "FAIL"]) {
+    assert.throws(() => assertPiPublicationQualification({ requalifications: [passed, { ...passed, status }] }), /Latest Pi runtime/);
+  }
+  assert.throws(() => assertPiPublicationQualification({ requalifications: [] }), /Latest Pi runtime/);
+});
