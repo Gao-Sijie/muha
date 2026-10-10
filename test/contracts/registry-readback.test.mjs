@@ -4,15 +4,15 @@ import test from "node:test";
 import { verifyInstallMetadata, verifyLatest, verifyPublishedPackage } from "../../scripts/registry-readback.mjs";
 
 const bytes = Buffer.from("reviewed archive fixture"), revision = "a".repeat(40);
-const item = { name: "muha", version: "0.1.14", sha256: createHash("sha256").update(bytes).digest("hex"),
+const item = { name: "@muha-sdk/muha", version: "0.1.15", sha256: createHash("sha256").update(bytes).digest("hex"),
   integrity: `sha512-${createHash("sha512").update(bytes).digest("base64")}` };
 const metadata = () => ({ name: item.name, version: item.version, dist: { integrity: item.integrity,
-  tarball: "https://registry.npmjs.org/muha/-/muha-0.1.14.tgz",
-  attestations: { url: "https://registry.npmjs.org/-/npm/v1/attestations/muha@0.1.14", provenance: {} } } });
+  tarball: "https://registry.npmjs.org/@muha-sdk/muha/-/muha-0.1.15.tgz",
+  attestations: { url: "https://registry.npmjs.org/-/npm/v1/attestations/@muha-sdk%2fmuha@0.1.15", provenance: {} } } });
 const proof = (source = revision) => ({ attestations: [{ predicateType: "https://slsa.dev/provenance/v1",
   bundle: { dsseEnvelope: { payload: Buffer.from(JSON.stringify({
     _type: "https://in-toto.io/Statement/v1", predicateType: "https://slsa.dev/provenance/v1",
-    subject: [{ name: `pkg:npm/muha@${item.version}`, digest: { sha512: Buffer.from(item.integrity.slice(7), "base64").toString("hex") } }],
+    subject: [{ name: `pkg:npm/%40muha-sdk/muha@${item.version}`, digest: { sha512: Buffer.from(item.integrity.slice(7), "base64").toString("hex") } }],
     predicate: { buildDefinition: {
       externalParameters: { workflow: { repository: "https://github.com/Gao-Sijie/muha", path: ".github/workflows/sdk-release.yml", ref: "refs/heads/main" } },
       resolvedDependencies: [{ uri: "git+https://github.com/Gao-Sijie/muha@refs/heads/main", digest: { gitCommit: source } }],
@@ -70,7 +70,7 @@ test("missing Registry evidence has a finite attempt and elapsed-time budget", a
   attempts = 0;
   await assert.rejects(verifyPublishedPackage(item, revision, {
     fetcher: async () => { attempts++; return new Response(null, { status: 503 }); },
-    now: () => time, sleep: async () => { time = 120000; },
+    now: () => time, sleep: async () => { time = 300000; },
   }), /503/);
   assert.equal(attempts, 2);
 });

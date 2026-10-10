@@ -26,7 +26,7 @@ and isolated package installation, rather than adding a public testing interface
 Run the affected test first and full `npm run check` before handoff. Preserve
 resource/permission, ESM, declarations, ordinary dependency and cleanup guarantees.
 
-This repository is the sole development source for the `muha` entry package,
+This repository is the sole development source for the `@muha-sdk/muha` entry package,
 Core and five official Adapters; Orchestrator belongs in its separate private project.
 The seven SDK packages share one release version and public npm metadata; the root
 workspace remains `private:true`. Publishing requires a clean, verified source

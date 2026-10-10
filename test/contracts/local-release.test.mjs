@@ -20,7 +20,7 @@ const expectedTarballs = [
   `muha-sdk-pi-adapter-${releaseVersion}.tgz`,
   `muha-sdk-kimi-adapter-${releaseVersion}.tgz`,
   `muha-sdk-agy-adapter-${releaseVersion}.tgz`,
-  `muha-${releaseVersion}.tgz`,
+  `muha-sdk-muha-${releaseVersion}.tgz`,
 ].sort();
 
 test(`the diagnostic V${releaseVersion} packer verifies seven SDK packages, dependencies, licenses and resources`, async () => {
@@ -73,7 +73,7 @@ test(`the diagnostic V${releaseVersion} packer verifies seven SDK packages, depe
         "@muha-sdk/opencode-adapter",
         "@muha-sdk/pi-adapter",
         "@muha-sdk/agy-adapter",
-        "muha",
+        "@muha-sdk/muha",
       ].sort(),
     );
     assert.equal(

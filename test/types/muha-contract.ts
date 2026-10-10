@@ -12,7 +12,7 @@ import {
   type OfficialAdapterOptions,
   type SessionReference,
   type TurnResult,
-} from "muha";
+} from "@muha-sdk/muha";
 
 const options: OfficialAdapterOptions = { env: { EXAMPLE: undefined } };
 const create: (harnesses: MuhaRuntimeConfig["harnesses"]) => Promise<MuhaRuntime> =
@@ -25,9 +25,9 @@ void result.status;
 void MuhaError;
 
 // @ts-expect-error The entry package does not expose the private Adapter protocol.
-import { createOfficialHarnessRegistration } from "muha";
+import { createOfficialHarnessRegistration } from "@muha-sdk/muha";
 void createOfficialHarnessRegistration;
 
 // @ts-expect-error There is no internal entry point on the public SDK package.
-import { createOfficialHarnessRegistration as internalRegistration } from "muha/internal";
+import { createOfficialHarnessRegistration as internalRegistration } from "@muha-sdk/muha/internal";
 void internalRegistration;

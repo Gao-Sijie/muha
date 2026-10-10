@@ -10,11 +10,11 @@ Each agent keeps its own models, tools, permissions, and conversation history.
 
 ## Install
 
-> Version 0.1.14 is being prepared for npm publication. Until `muha` is published,
+> Version 0.1.15 is being prepared for npm publication. Until `@muha-sdk/muha` is published,
 > use the existing [individual packages](#install-only-what-you-need).
 
 ```sh
-npm install muha
+npm install @muha-sdk/muha
 ```
 
 Requires Node.js **22.20.0 or newer** on **Linux x64 with glibc 2.28 or newer**,
@@ -31,7 +31,7 @@ its native authentication and model before using it.
 With Codex installed and signed in, save this as `example.mjs`:
 
 ```js
-import { createMuhaRuntime, codexAdapter } from "muha";
+import { createMuhaRuntime, codexAdapter } from "@muha-sdk/muha";
 
 const runtime = await createMuhaRuntime({ harnesses: [codexAdapter()] });
 try {

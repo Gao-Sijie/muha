@@ -1,6 +1,6 @@
 # SDK qualification and migration provenance
 
-The `muha` entry package introduced in 0.1.14 re-exports the same public Core
+The `@muha-sdk/muha` entry package in 0.1.15 re-exports the same public Core
 API and five official Adapter factories. Seven packages now form the SDK release;
 the Official Harness Set remains unchanged. Entry loading, one-dependency installs,
 README examples and lockfile replay receive controlled consumer checks. The 64

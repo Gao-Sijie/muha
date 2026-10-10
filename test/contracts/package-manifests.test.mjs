@@ -10,7 +10,7 @@ const packages = [
   ["kimi-adapter", "@muha-sdk/kimi-adapter"],
   ["pi-adapter", "@muha-sdk/pi-adapter"],
   ["agy-adapter", "@muha-sdk/agy-adapter"],
-  ["muha", "muha"],
+  ["muha", "@muha-sdk/muha"],
 ];
 
 async function readManifest(directory) {

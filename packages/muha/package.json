@@ -1,6 +1,6 @@
 {
-  "name": "muha",
-  "version": "0.1.14",
+  "name": "@muha-sdk/muha",
+  "version": "0.1.15",
   "description": "One TypeScript API for Codex, OpenCode, Kimi Code, Pi, and AGY.",
   "type": "module",
   "engines": {
@@ -28,12 +28,12 @@
   },
   "homepage": "https://github.com/Gao-Sijie/muha#readme",
   "dependencies": {
-    "@muha-sdk/core": "0.1.14",
-    "@muha-sdk/codex-adapter": "0.1.14",
-    "@muha-sdk/opencode-adapter": "0.1.14",
-    "@muha-sdk/kimi-adapter": "0.1.14",
-    "@muha-sdk/pi-adapter": "0.1.14",
-    "@muha-sdk/agy-adapter": "0.1.14"
+    "@muha-sdk/core": "0.1.15",
+    "@muha-sdk/codex-adapter": "0.1.15",
+    "@muha-sdk/opencode-adapter": "0.1.15",
+    "@muha-sdk/kimi-adapter": "0.1.15",
+    "@muha-sdk/pi-adapter": "0.1.15",
+    "@muha-sdk/agy-adapter": "0.1.15"
   },
   "publishConfig": {
     "access": "public",

@@ -9,11 +9,11 @@
 
 ## 安装
 
-> 0.1.14 正在准备 npm 发布。在 `muha` 发布完成前，请使用已有的
+> 0.1.15 正在准备 npm 发布。在 `@muha-sdk/muha` 发布完成前，请使用已有的
 > [按需安装方式](#按需安装)。
 
 ```sh
-npm install muha
+npm install @muha-sdk/muha
 ```
 
 需要 **Node.js 22.20.0 或更新版本**，运行环境为 **Linux x64、glibc 2.28
@@ -29,7 +29,7 @@ Codex、OpenCode、Kimi Code 和 AGY 的原生工具需要分别安装、登录�
 安装并登录 Codex 后，将以下代码保存为 `example.mjs`：
 
 ```js
-import { createMuhaRuntime, codexAdapter } from "muha";
+import { createMuhaRuntime, codexAdapter } from "@muha-sdk/muha";
 
 const runtime = await createMuhaRuntime({ harnesses: [codexAdapter()] });
 try {

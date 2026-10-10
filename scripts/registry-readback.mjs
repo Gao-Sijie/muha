@@ -45,9 +45,9 @@ function registryURL(value) {
 }
 
 async function eventually(operation, {
-  fetcher = fetch, sleep = delay, attempts = 18, delayMs = 5000, now = Date.now,
+  fetcher = fetch, sleep = delay, attempts = 60, delayMs = 5000, now = Date.now,
 } = {}) {
-  const deadline = now() + 120000;
+  const deadline = now() + 300000;
   for (let attempt = 1; ; attempt++) {
     try { return await operation(fetcher); }
     catch (error) {

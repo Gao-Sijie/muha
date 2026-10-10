@@ -39,7 +39,7 @@ const server = createServer((request, response) => {
       return;
     }
   }
-  if (path.startsWith("/@muha-sdk/") || path.startsWith("/muha/")) {
+  if (path.startsWith("/@muha-sdk/")) {
     response.writeHead(404).end(); return;
   }
   response.writeHead(302, { Location: new URL(request.url, "https://registry.npmjs.org/").href }).end();

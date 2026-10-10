@@ -65,9 +65,9 @@ export const MUHA_DELIVERY_PACKAGES = Object.freeze([
   }),
   Object.freeze({
     role: "umbrella",
-    packageName: "muha",
+    packageName: "@muha-sdk/muha",
     directory: "muha",
-    artifactStem: "muha",
+    artifactStem: "muha-sdk-muha",
     additionalFiles: Object.freeze(["README.zh-CN.md"]),
     requiredFiles: Object.freeze(["dist/index.js", "README.zh-CN.md"]),
   }),

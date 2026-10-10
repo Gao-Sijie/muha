@@ -53,11 +53,11 @@ export async function verifyUmbrellaConsumer({ repositoryRoot, registryVersion, 
       });
     }
     await writeFile(join(consumer, "package.json"), JSON.stringify({ private: true, type: "module", allowScripts: reviewedInstallScripts }));
-    // Bare `muha` is tested before publication. The public job pins the reviewed
+    // Bare `@muha-sdk/muha` is tested before publication. The public job pins the reviewed
     // candidate version because latest is promoted only after both jobs pass.
-    await run("npm", ["install", "--save-exact", registryVersion ? `muha@${registryVersion}` : "muha"], { cwd: consumer, env });
+    await run("npm", ["install", "--save-exact", registryVersion ? `@muha-sdk/muha@${registryVersion}` : "@muha-sdk/muha"], { cwd: consumer, env });
     const manifest = JSON.parse(await readFile(join(consumer, "package.json"), "utf8"));
-    assert.deepEqual(manifest.dependencies, { muha: release.version }, "muha must be the only direct SDK dependency");
+    assert.deepEqual(manifest.dependencies, { "@muha-sdk/muha": release.version }, "@muha-sdk/muha must be the only direct SDK dependency");
     assert.equal(manifest.overrides, undefined);
     const lockBytes = await readFile(join(consumer, "package-lock.json"));
     const lock = JSON.parse(lockBytes);
@@ -88,7 +88,7 @@ export async function verifyUmbrellaConsumer({ repositoryRoot, registryVersion, 
       'childProcess.spawn = childProcess.spawnSync = childProcess.exec = childProcess.execFile = () => { throw new Error("Import started a process"); };',
       'syncBuiltinESMExports();',
       'globalThis.fetch = () => { throw new Error("Import contacted a model/network"); };',
-      'const sdk = await import("muha");',
+      'const sdk = await import("@muha-sdk/muha");',
       'const core = await import("@muha-sdk/core");',
       'for (const name of Object.keys(core)) assert.equal(sdk[name], core[name]);',
       ...MUHA_DELIVERY_PACKAGES.filter(item => item.role === "adapter").map(item => {
@@ -96,14 +96,14 @@ export async function verifyUmbrellaConsumer({ repositoryRoot, registryVersion, 
         return `assert.equal(sdk.${factory}, (await import(${JSON.stringify(item.packageName)})).${factory}); assert.equal(typeof sdk.${factory}(), "object");`;
       }),
       'assert.equal(sdk.createOfficialHarnessRegistration, undefined);',
-      'await assert.rejects(import("muha/internal"), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });',
+      'await assert.rejects(import("@muha-sdk/muha/internal"), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });',
     ].join("\n"));
     await run(process.execPath, ["entry.mjs"], { cwd: consumer, env });
-    await writeFile(join(consumer, "entry.cjs"), 'const sdk = require("muha"); if(typeof sdk.piAdapter !== "function") throw new Error("CommonJS ESM compatibility failed");\n');
+    await writeFile(join(consumer, "entry.cjs"), 'const sdk = require("@muha-sdk/muha"); if(typeof sdk.piAdapter !== "function") throw new Error("CommonJS ESM compatibility failed");\n');
     await run(process.execPath, ["entry.cjs"], { cwd: consumer, env });
 
-    const english = await readFile(join(consumer, "node_modules/muha/README.md"), "utf8");
-    const chinese = await readFile(join(consumer, "node_modules/muha/README.zh-CN.md"), "utf8");
+    const english = await readFile(join(consumer, "node_modules/@muha-sdk/muha/README.md"), "utf8");
+    const chinese = await readFile(join(consumer, "node_modules/@muha-sdk/muha/README.zh-CN.md"), "utf8");
     const example = text => text.match(/```js\n([\s\S]*?)\n```/)[1];
     assert.equal(example(english), example(chinese), "Both languages must use the same executable example");
     await writeFile(join(consumer, "example.mjs"), example(english));
@@ -133,7 +133,7 @@ export async function verifyUmbrellaConsumer({ repositoryRoot, registryVersion, 
     const pi = await controlledPi({ after: callback => cleanup.push(callback) });
     await writeFile(join(consumer, "pi-only.mjs"), [
       'import assert from "node:assert/strict";',
-      'import {createMuhaRuntime, piAdapter} from "muha";',
+      'import {createMuhaRuntime, piAdapter} from "@muha-sdk/muha";',
       `const runtime = await createMuhaRuntime({harnesses: [piAdapter({env: {PI_CODING_AGENT_DIR: ${JSON.stringify(pi.agentDir)}, PATH: ${JSON.stringify(nodeOnly)}}})], dataDir: ${JSON.stringify(join(root, "pi-diagnostics"))}});`,
       'try {',
       `const session = await runtime.createSession({harness: "pi", workspacePath: ${JSON.stringify(pi.workspace)}, model: "controlled/controlled", approvalPolicy: "harnessManaged"});`,

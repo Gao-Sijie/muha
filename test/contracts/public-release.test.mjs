@@ -10,7 +10,7 @@ import { validatePublicationManifest } from "../../scripts/publication-candidate
 import { publicationFiles } from "../../scripts/delivery-manifest.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
-const revision = "a".repeat(40), version = "0.1.14";
+const revision = "a".repeat(40), version = "0.1.15";
 const candidate = () => ({
   delivery: "public-npm-candidate", candidate: true, version,
   source: { revision, dirty: false, tree: "b".repeat(40), lockfileSha256: "c".repeat(64) },

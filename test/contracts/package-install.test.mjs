@@ -83,7 +83,7 @@ test("an isolated fixture can install Core and all five official Adapters", asyn
         const archive = join(releaseDirectory, item.filename);
         const sha256 = createHash("sha256").update(await readFile(archive)).digest("hex");
         assert.equal(sha256, item.sha256, `${item.filename} differs from release.json`);
-        if (item.name !== "muha") tarballs.push(archive);
+        if (item.name !== "@muha-sdk/muha") tarballs.push(archive);
       }
       const checksums = await readFile(join(releaseDirectory, "SHA256SUMS"), "utf8");
       assert.equal(checksums, `${release.packages.map(item => `${item.sha256}  ${item.filename}`).sort().join("\n")}\n`);
@@ -183,7 +183,7 @@ test("an isolated fixture can install Core and all five official Adapters", asyn
   }
 });
 
-test("installing only muha delivers the complete SDK and replays its consumer lockfile", { timeout: 240000 }, async () => {
+test("installing only @muha-sdk/muha delivers the complete SDK and replays its consumer lockfile", { timeout: 240000 }, async () => {
   await verifyUmbrellaConsumer({ repositoryRoot, registryVersion, reviewedInstallScripts });
 });
 
