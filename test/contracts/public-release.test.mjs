@@ -7,15 +7,18 @@ import test from "node:test";
 import { MUHA_DELIVERY_PACKAGES } from "../../scripts/delivery-manifest.mjs";
 import { validateRegistryProvenance } from "../../scripts/registry-provenance.mjs";
 import { validatePublicationManifest } from "../../scripts/publication-candidate.mjs";
+import { publicationFiles } from "../../scripts/delivery-manifest.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
-const revision = "a".repeat(40), version = "0.1.13";
+const revision = "a".repeat(40), version = "0.1.14";
 const candidate = () => ({
   delivery: "public-npm-candidate", candidate: true, version,
   source: { revision, dirty: false, tree: "b".repeat(40), lockfileSha256: "c".repeat(64) },
   packages: MUHA_DELIVERY_PACKAGES.map(item => ({
     name: item.packageName, version, filename: `${item.artifactStem}-${version}.tgz`,
-    dependencies: item.role === "adapter" ? { "@muha-sdk/core": version } : {},
+    dependencies: item.role === "umbrella" ? Object.fromEntries(MUHA_DELIVERY_PACKAGES
+      .filter(entry => entry.role !== "umbrella").map(entry => [entry.packageName, version])) :
+      item.role === "adapter" ? { "@muha-sdk/core": version } : {},
     sha256: "d".repeat(64), integrity: "sha512-ZA==",
     resources: ["package.json", "LICENSE", "README.md", ...item.requiredFiles].map(path => ({ path })),
     files: ["package.json", "LICENSE", "README.md", "dist/index.d.ts", ...item.requiredFiles].map(path => ({ path })),
@@ -31,7 +34,12 @@ test("publication rejects diagnostics, changed sources, mixed versions and missi
     release => { release.source.revision = "e".repeat(40); },
     release => { release.packages.pop(); },
     release => { release.packages[1].version = "0.1.12"; },
-    release => { release.packages[1].dependencies["@muha-sdk/core"] = "^0.1.13"; },
+    release => { release.packages[1].dependencies["@muha-sdk/core"] = `^${version}`; },
+    release => { delete release.packages.at(-1).dependencies["@muha-sdk/pi-adapter"]; },
+    release => { release.packages.at(-1).dependencies["@muha-sdk/pi-adapter"] = `^${version}`; },
+    release => { release.packages.at(-1).dependencies["unreviewed-package"] = version; },
+    release => { release.packages.at(-1).files.push({ path: "README.private.md" }); },
+    release => { release.packages.at(-1).resources = release.packages.at(-1).resources.filter(item => item.path !== "README.zh-CN.md"); },
     release => { release.packages[0].name = "muha-monorepo"; },
     release => { release.packages[0].filename = "../../core.tgz"; },
     release => { release.packages[4].resources = release.packages[4].resources.filter(item => item.path !== "dist/sdk-loader.mjs"); },
@@ -67,7 +75,7 @@ test("public registry metadata never makes the root workspace publishable", asyn
     const manifest = JSON.parse(await readFile(join(root, directory, "package.json"), "utf8"));
     assert.equal(manifest.private, undefined);
     assert.deepEqual(manifest.publishConfig, { access: "public", registry: "https://registry.npmjs.org/" });
-    assert.deepEqual(manifest.files, ["dist"]);
+    assert.deepEqual(manifest.files, publicationFiles(MUHA_DELIVERY_PACKAGES.find(item => item.packageName === manifest.name)));
     assert.equal(manifest.bundledDependencies, undefined);
     assert.equal(manifest.bundleDependencies, undefined);
   }
@@ -87,7 +95,7 @@ test("Registry provenance rejects another package, bytes, source, workflow or ru
   const item = { name: "@muha-sdk/core", version, integrity: "sha512-ZA==" };
   const statement = {
     _type: "https://in-toto.io/Statement/v1", predicateType: "https://slsa.dev/provenance/v1",
-    subject: [{ name: "pkg:npm/%40muha-sdk/core@0.1.13", digest: { sha512: "64" } }],
+    subject: [{ name: `pkg:npm/%40muha-sdk/core@${version}`, digest: { sha512: "64" } }],
     predicate: { buildDefinition: {
       externalParameters: { workflow: { repository: "https://github.com/Gao-Sijie/muha", path: ".github/workflows/sdk-release.yml", ref: "refs/heads/main" } },
       resolvedDependencies: [{ uri: "git+https://github.com/Gao-Sijie/muha@refs/heads/main", digest: { gitCommit: revision } }],
@@ -96,7 +104,7 @@ test("Registry provenance rejects another package, bytes, source, workflow or ru
   const envelope = value => ({ attestations: [{ predicateType: "https://slsa.dev/provenance/v1", bundle: { dsseEnvelope: { payload: Buffer.from(JSON.stringify(value)).toString("base64") } } }] });
   validateRegistryProvenance(envelope(statement), item, revision);
   for (const alter of [
-    value => { value.subject[0].name = "pkg:npm/%40muha-sdk/pi-adapter@0.1.13"; },
+    value => { value.subject[0].name = `pkg:npm/%40muha-sdk/pi-adapter@${version}`; },
     value => { value.subject[0].digest.sha512 = "65"; },
     value => { value.predicate.buildDefinition.resolvedDependencies[0].digest.gitCommit = "b".repeat(40); },
     value => { value.predicate.buildDefinition.externalParameters.workflow.path = ".github/workflows/other.yml"; },

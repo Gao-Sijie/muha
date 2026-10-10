@@ -20,9 +20,10 @@ const expectedTarballs = [
   `muha-sdk-pi-adapter-${releaseVersion}.tgz`,
   `muha-sdk-kimi-adapter-${releaseVersion}.tgz`,
   `muha-sdk-agy-adapter-${releaseVersion}.tgz`,
+  `muha-${releaseVersion}.tgz`,
 ].sort();
 
-test(`the diagnostic V${releaseVersion} packer verifies six SDK packages, dependencies, licenses and resources`, async () => {
+test(`the diagnostic V${releaseVersion} packer verifies seven SDK packages, dependencies, licenses and resources`, async () => {
   const output = await mkdtemp(join(tmpdir(), "muha-local-release-"));
   try {
     const result = spawnSync(
@@ -37,7 +38,7 @@ test(`the diagnostic V${releaseVersion} packer verifies six SDK packages, depend
 
     const readme = await readFile(join(output, "README.md"), "utf8");
     assert.match(readme, new RegExp(`^# Muha SDK diagnostic packages V${escapeRegExp(releaseVersion)}$`, "m"));
-    assert.match(readme, /six-package diagnostic set/);
+    assert.match(readme, /seven-package diagnostic set/);
     assert.doesNotMatch(readme, /muha-orchestrator/);
     assert.match(readme, /sha256sum --check SHA256SUMS/);
     assert.match(readme, /npm install/);
@@ -72,6 +73,7 @@ test(`the diagnostic V${releaseVersion} packer verifies six SDK packages, depend
         "@muha-sdk/opencode-adapter",
         "@muha-sdk/pi-adapter",
         "@muha-sdk/agy-adapter",
+        "muha",
       ].sort(),
     );
     assert.equal(

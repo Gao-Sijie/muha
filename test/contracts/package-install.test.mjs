@@ -7,9 +7,13 @@ import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { controlledPi } from "../../packages/pi-adapter/test/support/controlled-pi.mjs";
+import { MUHA_DELIVERY_PACKAGES } from "../../scripts/delivery-manifest.mjs";
+import { verifyUmbrellaConsumer } from "../support/umbrella-consumer.mjs";
 
 const repositoryRoot = resolve(import.meta.dirname, "../..");
-const registryVersion = process.env.MUHA_PUBLIC_REGISTRY_VERSION;
+const registryVersion = process.env.MUHA_PUBLIC_REGISTRY_VERSION ?? (process.env.MUHA_REGISTRY_CANDIDATE
+  ? JSON.parse(await readFile(join(resolve(process.env.MUHA_REGISTRY_CANDIDATE), "release.json"), "utf8")).version
+  : undefined);
 // The consumer owns its npm policy. Approvals pin only the reviewed hook versions;
 // they do not propagate through the published Muha package manifests.
 const reviewedInstallScripts = JSON.parse(await readFile(join(repositoryRoot, "package.json"), "utf8")).allowScripts;
@@ -71,7 +75,7 @@ test("an isolated fixture can install Core and all five official Adapters", asyn
       for (const name of ["NODE_AUTH_TOKEN", "NPM_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"]) delete isolatedEnvironment[name];
       const releaseDirectory = resolve(process.env.MUHA_RELEASE_DIRECTORY);
       const release = JSON.parse(await readFile(join(releaseDirectory, "release.json"), "utf8"));
-      assert.equal(release.packages.length, 6, "release must contain exactly six Muha SDK packages");
+      assert.equal(release.packages.length, MUHA_DELIVERY_PACKAGES.length, "release must contain the complete SDK cohort");
       assert.equal(new Set(release.packages.map(item => item.version)).size, 1);
       tarballs = [];
       for (const item of release.packages) {
@@ -79,7 +83,7 @@ test("an isolated fixture can install Core and all five official Adapters", asyn
         const archive = join(releaseDirectory, item.filename);
         const sha256 = createHash("sha256").update(await readFile(archive)).digest("hex");
         assert.equal(sha256, item.sha256, `${item.filename} differs from release.json`);
-        tarballs.push(archive);
+        if (item.name !== "muha") tarballs.push(archive);
       }
       const checksums = await readFile(join(releaseDirectory, "SHA256SUMS"), "utf8");
       assert.equal(checksums, `${release.packages.map(item => `${item.sha256}  ${item.filename}`).sort().join("\n")}\n`);
@@ -177,6 +181,10 @@ test("an isolated fixture can install Core and all five official Adapters", asyn
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("installing only muha delivers the complete SDK and replays its consumer lockfile", { timeout: 240000 }, async () => {
+  await verifyUmbrellaConsumer({ repositoryRoot, registryVersion, reviewedInstallScripts });
 });
 
 async function verifyConsumerInstall(adapterDirectory, adapterPackage, factory) {

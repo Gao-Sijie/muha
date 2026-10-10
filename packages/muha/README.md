@@ -1,6 +1,6 @@
 # Muha
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+[English](https://github.com/Gao-Sijie/muha/blob/main/README.md) | [简体中文](https://github.com/Gao-Sijie/muha/blob/main/README.zh-CN.md)
 
 One TypeScript API for Codex, OpenCode, Kimi Code, Pi, and AGY.
 
@@ -9,9 +9,6 @@ responses and tool activity, interrupt work, and resume native conversations.
 Each agent keeps its own models, tools, permissions, and conversation history.
 
 ## Install
-
-> Version 0.1.14 is being prepared for npm publication. Until `muha` is published,
-> use the existing [individual packages](#install-only-what-you-need).
 
 ```sh
 npm install muha
@@ -71,11 +68,11 @@ workflow; policy details differ between agents.
 
 | Agent | Adapter | Setup |
 | --- | --- | --- |
-| [Codex](packages/codex-adapter/README.md) | `codexAdapter()` | Install and authenticate `codex` |
-| [OpenCode](packages/opencode-adapter/README.md) | `openCodeAdapter()` | Install and authenticate `opencode` v2 |
-| [Kimi Code](packages/kimi-adapter/README.md) | `kimiAdapter()` | Install and authenticate `kimi` |
-| [Pi](packages/pi-adapter/README.md) | `piAdapter()` | SDK installed with Muha; configure native auth/model |
-| [AGY](packages/agy-adapter/README.md) | `agyAdapter()` | Install and authenticate `agy` |
+| [Codex](https://github.com/Gao-Sijie/muha/blob/main/packages/codex-adapter/README.md) | `codexAdapter()` | Install and authenticate `codex` |
+| [OpenCode](https://github.com/Gao-Sijie/muha/blob/main/packages/opencode-adapter/README.md) | `openCodeAdapter()` | Install and authenticate `opencode` v2 |
+| [Kimi Code](https://github.com/Gao-Sijie/muha/blob/main/packages/kimi-adapter/README.md) | `kimiAdapter()` | Install and authenticate `kimi` |
+| [Pi](https://github.com/Gao-Sijie/muha/blob/main/packages/pi-adapter/README.md) | `piAdapter()` | SDK installed with Muha; configure native auth/model |
+| [AGY](https://github.com/Gao-Sijie/muha/blob/main/packages/agy-adapter/README.md) | `agyAdapter()` | Install and authenticate `agy` |
 
 Pass your chosen adapters to `createMuhaRuntime({ harnesses: [...] })`.
 Only configured agents start. Pi and AGY require an explicit supported policy,
@@ -88,8 +85,8 @@ such as `harnessManaged`; they do not support the default `interactive` policy.
 - Use `turn.interrupt()` to stop a running turn.
 - Configure workspace Skills and MCP where supported by your chosen agent.
 
-See the [API guide](packages/core/README.md) and [verified versions and
-limitations](QUALIFICATION.md). A common API preserves agent-specific behavior;
+See the [API guide](https://github.com/Gao-Sijie/muha/blob/main/packages/core/README.md) and [verified versions and
+limitations](https://github.com/Gao-Sijie/muha/blob/main/QUALIFICATION.md). A common API preserves agent-specific behavior;
 it does not promise identical answers or a shared model catalog.
 
 ## Install only what you need
@@ -112,6 +109,6 @@ compiling Muha from source is not a required setup step.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development and tests.
+See [CONTRIBUTING.md](https://github.com/Gao-Sijie/muha/blob/main/CONTRIBUTING.md) for development and tests.
 Report problems in [GitHub Issues](https://github.com/Gao-Sijie/muha/issues).
-Security reports: [SECURITY.md](SECURITY.md). Licensed under [MIT](LICENSE).
+Security reports: [SECURITY.md](https://github.com/Gao-Sijie/muha/blob/main/SECURITY.md). Licensed under [MIT](https://github.com/Gao-Sijie/muha/blob/main/LICENSE).

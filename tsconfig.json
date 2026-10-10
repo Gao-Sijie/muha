@@ -1,11 +1,26 @@
 {
   "files": [],
   "references": [
-    { "path": "./packages/core" },
-    { "path": "./packages/codex-adapter" },
-    { "path": "./packages/opencode-adapter" },
-    { "path": "./packages/kimi-adapter" },
-    { "path": "./packages/pi-adapter" },
-    { "path": "./packages/agy-adapter" }
+    {
+      "path": "./packages/core"
+    },
+    {
+      "path": "./packages/codex-adapter"
+    },
+    {
+      "path": "./packages/opencode-adapter"
+    },
+    {
+      "path": "./packages/kimi-adapter"
+    },
+    {
+      "path": "./packages/pi-adapter"
+    },
+    {
+      "path": "./packages/agy-adapter"
+    },
+    {
+      "path": "./packages/muha"
+    }
   ]
 }

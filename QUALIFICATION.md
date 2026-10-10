@@ -1,5 +1,14 @@
 # SDK qualification and migration provenance
 
+The `muha` entry package introduced in 0.1.14 re-exports the same public Core
+API and five official Adapter factories. Seven packages now form the SDK release;
+the Official Harness Set remains unchanged. Entry loading, one-dependency installs,
+README examples and lockfile replay receive controlled consumer checks. The 64
+qualified Core/Adapter runtime resources and external dependency locks retain
+their accepted digests; this packaging change does not repeat the paid model matrix.
+Public Registry acceptance is recorded separately in each
+[GitHub Release](https://github.com/Gao-Sijie/muha/releases).
+
 The first functional version was accepted against source
 `8fa1a52aee74200e11c39e91c1ac7650bf31e1c4`. The migration source document baseline
 is `1c59b2d48f14ba508d3dafb93bb2e4455cdba6a1`; the unchanged Harnesses retain that baseline. Pi 1.0.4 received separately authorized bounded requalification on 2026-10-08.

@@ -2,7 +2,7 @@
 
 {{CANDIDATE_STATUS}}
 
-This six-package candidate contains Core and the five official Adapters. Only
+This seven-package candidate contains muha, Core and the five official Adapters. Only
 the tarballs listed in release.json may be published. They share one version;
 each Adapter depends on that exact Core version. The root workspace is private.
 
@@ -18,11 +18,11 @@ Publication requires the separately reviewed public source and registry audit.
 Use provenance from the controlled GitHub Actions workflow. Candidate packing
 does not establish a successful registry installation or real-model qualification.
 
-After all six exact versions are published and accepted from a cold registry
-install and lockfile npm ci, consumers can install Core plus one Adapter:
+After all seven exact versions are published and accepted from a cold registry
+install and lockfile npm ci, consumers can install the complete SDK:
 
 ```sh
-npm install --save-exact @muha-sdk/core@{{VERSION}} @muha-sdk/codex-adapter@{{VERSION}}
+npm install --save-exact muha@{{VERSION}}
 ```
 
 See the [package-specific usage](https://github.com/Gao-Sijie/muha#readme) and

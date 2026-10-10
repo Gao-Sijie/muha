@@ -1,6 +1,6 @@
 # Muha SDK agent instructions
 
-This repository contains Core and five official Harness Adapters only.
+This repository contains the `muha` SDK entry package, Core and five official Harness Adapters.
 
 - Before changing behavior, read [CONTEXT.md](CONTEXT.md) and
   [qualification and exceptions](QUALIFICATION.md). When local `docs/adr/` is

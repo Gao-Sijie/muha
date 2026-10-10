@@ -63,11 +63,44 @@ export const MUHA_DELIVERY_PACKAGES = Object.freeze([
     artifactStem: "muha-sdk-agy-adapter",
     requiredFiles: Object.freeze(["dist/index.js", "dist/agy-supervisor", "dist/agy-supervisor.c", "dist/agy-supervisor-glibc-compat.c"]),
   }),
+  Object.freeze({
+    role: "umbrella",
+    packageName: "muha",
+    directory: "muha",
+    artifactStem: "muha",
+    additionalFiles: Object.freeze(["README.zh-CN.md"]),
+    requiredFiles: Object.freeze(["dist/index.js", "README.zh-CN.md"]),
+  }),
 ]);
 
 export const MUHA_ADAPTER_DELIVERIES = Object.freeze(
   MUHA_DELIVERY_PACKAGES.filter(({ role }) => role === "adapter"),
 );
+
+export function publicationFiles(delivery) {
+  return ["dist", ...(delivery.additionalFiles ?? [])];
+}
+
+export function isPublicationFile(delivery, path) {
+  if (typeof path !== "string" || /[\\\r\n]/.test(path) ||
+      path.split("/").some(part => ["", "..", "docs"].includes(part))) return false;
+  return ["package.json", "LICENSE", "README.md", ...(delivery.additionalFiles ?? [])].includes(path) ||
+    path.startsWith("dist/");
+}
+
+export function validateDeliveryDependencies(delivery, dependencies, version) {
+  if (delivery.role === "adapter" && dependencies?.["@muha-sdk/core"] !== version) {
+    throw new Error(`${delivery.packageName}: Core dependency must pin the release version`);
+  }
+  if (delivery.role === "umbrella") {
+    const expected = MUHA_DELIVERY_PACKAGES.filter(item => item.role !== "umbrella")
+      .map(item => item.packageName).sort();
+    if (JSON.stringify(Object.keys(dependencies ?? {}).sort()) !== JSON.stringify(expected) ||
+        expected.some(name => dependencies[name] !== version)) {
+      throw new Error(`${delivery.packageName}: dependencies must pin the complete SDK release`);
+    }
+  }
+}
 
 export async function deliveryResources(root, delivery) {
   const resources = ["package.json", "LICENSE", "README.md", ...delivery.requiredFiles]

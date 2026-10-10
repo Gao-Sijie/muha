@@ -1,6 +1,6 @@
 {
   "name": "@muha-sdk/opencode-adapter",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "Official OpenCode adapter for Muha SDK.",
   "type": "module",
   "engines": {
@@ -27,7 +27,7 @@
   },
   "homepage": "https://github.com/Gao-Sijie/muha/tree/main/packages/opencode-adapter#readme",
   "dependencies": {
-    "@muha-sdk/core": "0.1.13",
+    "@muha-sdk/core": "0.1.14",
     "@opencode/client": "2.0.11",
     "jsonc-parser": "3.3.1"
   },

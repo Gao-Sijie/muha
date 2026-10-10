@@ -1,6 +1,6 @@
 {
   "name": "@muha-sdk/pi-adapter",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "Official Pi SDK adapter for Muha SDK.",
   "type": "module",
   "exports": {
@@ -24,7 +24,7 @@
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "1.0.4",
-    "@muha-sdk/core": "0.1.13"
+    "@muha-sdk/core": "0.1.14"
   },
   "repository": {
     "type": "git",

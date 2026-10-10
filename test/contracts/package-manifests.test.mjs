@@ -10,6 +10,7 @@ const packages = [
   ["kimi-adapter", "@muha-sdk/kimi-adapter"],
   ["pi-adapter", "@muha-sdk/pi-adapter"],
   ["agy-adapter", "@muha-sdk/agy-adapter"],
+  ["muha", "muha"],
 ];
 
 async function readManifest(directory) {
@@ -33,7 +34,7 @@ test("the official packages share one installable ESM contract", async () => {
       assert.equal(manifest.engines.node, ">=22.20.0");
       assert.deepEqual(
         manifest.files,
-        ["dist"],
+        directory === "muha" ? ["dist", "README.zh-CN.md"] : ["dist"],
       );
       assert.deepEqual(manifest.publishConfig, { access: "public", registry: "https://registry.npmjs.org/" });
       assert.deepEqual(manifest.exports["."], {
@@ -73,6 +74,10 @@ test("the official packages share one installable ESM contract", async () => {
   assert.equal(manifests[4].bundledDependencies, undefined);
   assert.equal(manifests[4].bundleDependencies, undefined);
   assert.deepEqual(manifests[5].dependencies, { "@muha-sdk/core": releaseVersion });
+  assert.deepEqual(manifests[6].dependencies,
+    Object.fromEntries(packages.slice(0, 6).map(([, name]) => [name, releaseVersion])));
+  assert.equal(manifests[6].optionalDependencies, undefined);
+  assert.equal(manifests[6].peerDependencies, undefined);
 });
 
 test("every official package tarball contains declarations and one ESM build", () => {
@@ -88,6 +93,7 @@ test("every official package tarball contains declarations and one ESM build", (
     const paths = files.map(({ path }) => path);
     assert.ok(paths.includes("LICENSE"), `${directory} has its MIT license text`);
     assert.ok(paths.includes("README.md"), `${directory} has package documentation`);
+    if (directory === "muha") assert.ok(paths.includes("README.zh-CN.md"), "muha ships the Chinese guide");
     assert.ok(paths.includes("package.json"), `${directory} has its manifest`);
     assert.ok(paths.includes("dist/index.js"), `${directory} has ESM output`);
     if (directory === "codex-adapter") {

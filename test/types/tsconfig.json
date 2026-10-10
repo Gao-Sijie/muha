@@ -5,5 +5,8 @@
     "declarationMap": false,
     "noEmit": true
   },
-  "include": ["public-contract.ts"]
+  "include": [
+    "public-contract.ts",
+    "muha-contract.ts"
+  ]
 }

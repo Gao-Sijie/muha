@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { lstat, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { MUHA_DELIVERY_PACKAGES } from "./delivery-manifest.mjs";
+import { isPublicationFile, publicationFiles, validateDeliveryDependencies, MUHA_DELIVERY_PACKAGES } from "./delivery-manifest.mjs";
 import { assertPackedResourceMatches } from "./packed-resource.mjs";
 
 const digest = (bytes, algorithm = "sha256", encoding = "hex") =>
@@ -23,6 +23,7 @@ export async function readPublicationCandidate(directory, { revision, version, m
     throw new Error("Candidate directory contains unexpected or missing files");
   }
   for (const item of release.packages) {
+    const delivery = MUHA_DELIVERY_PACKAGES.find(entry => entry.packageName === item.name);
     const archive = join(directory, item.filename);
     const metadata = await lstat(archive);
     if (!metadata.isFile()) throw new Error(`${item.name}: tarball must be a regular file`);
@@ -38,7 +39,7 @@ export async function readPublicationCandidate(directory, { revision, version, m
       throw new Error(`${item.name}: archive files differ from reviewed file evidence`);
     }
     for (const path of contents) {
-      if (path.split("/").includes("docs") || !["package/package.json", "package/LICENSE", "package/README.md"].includes(path) && !/^package\/dist\/[^\r\n]+$/.test(path) || path.split("/").includes("..")) {
+      if (!path.startsWith("package/") || !isPublicationFile(delivery, path.slice("package/".length))) {
         throw new Error(`${item.name}: forbidden tarball path ${path}`);
       }
     }
@@ -47,12 +48,17 @@ export async function readPublicationCandidate(directory, { revision, version, m
         manifest.publishConfig?.access !== "public" || manifest.publishConfig?.registry !== "https://registry.npmjs.org/" ||
         manifest.repository?.url !== "https://github.com/Gao-Sijie/muha.git" || manifest.type !== "module" ||
         manifest.engines?.node !== ">=22.20.0" || manifest.license !== "MIT" ||
-        JSON.stringify(manifest.files) !== JSON.stringify(["dist"]) ||
+        JSON.stringify(manifest.files) !== JSON.stringify(publicationFiles(delivery)) ||
         manifest.exports?.["."]?.types !== "./dist/index.d.ts" || manifest.exports?.["."]?.default !== "./dist/index.js") {
       throw new Error(`${item.name}: invalid packed publication metadata`);
     }
-    if (manifest.name !== "@muha-sdk/core" && manifest.dependencies?.["@muha-sdk/core"] !== version) {
-      throw new Error(`${item.name}: packed Core dependency must match the release`);
+    validateDeliveryDependencies(delivery, manifest.dependencies, version);
+    if (JSON.stringify(Object.entries(manifest.dependencies ?? {}).sort()) !==
+        JSON.stringify(Object.entries(item.dependencies ?? {}).sort())) {
+      throw new Error(`${item.name}: packed dependencies differ from reviewed evidence`);
+    }
+    if (delivery.role === "umbrella" && (manifest.optionalDependencies || manifest.peerDependencies)) {
+      throw new Error(`${item.name}: the complete SDK requires ordinary production dependencies`);
     }
     for (const resource of item.resources) assertPackedResourceMatches(archive, resource, item.name);
   }
@@ -76,7 +82,7 @@ export function validatePublicationManifest(release, { revision, version }) {
     throw new Error("Candidate must use the approved stable version");
   }
   if (!Array.isArray(release.packages) || release.packages.length !== MUHA_DELIVERY_PACKAGES.length) {
-    throw new Error("Publication requires exactly the six official SDK packages");
+    throw new Error("Publication requires exactly the official SDK delivery packages");
   }
   for (const [index, delivery] of MUHA_DELIVERY_PACKAGES.entries()) {
     const item = release.packages[index];
@@ -84,9 +90,7 @@ export function validatePublicationManifest(release, { revision, version }) {
         item.filename !== `${delivery.artifactStem}-${version}.tgz`) {
       throw new Error("Candidate identities, versions or ordered package set are invalid");
     }
-    if (delivery.role === "adapter" && item.dependencies?.["@muha-sdk/core"] !== version) {
-      throw new Error(`${item.name}: Core dependency must pin the release version`);
-    }
+    validateDeliveryDependencies(delivery, item.dependencies, version);
     if (!/^[a-f0-9]{64}$/.test(item.sha256 ?? "") || !/^sha512-[A-Za-z0-9+/]+={0,2}$/.test(item.integrity ?? "") ||
         !Array.isArray(item.resources) || !Array.isArray(item.files)) {
       throw new Error(`${item.name}: missing artifact or file evidence`);
@@ -100,7 +104,7 @@ export function validatePublicationManifest(release, { revision, version }) {
       throw new Error(`${item.name}: missing TypeScript declaration entry`);
     }
     for (const file of item.files) {
-      if (file.path.split("/").includes("docs") || !["package.json", "LICENSE", "README.md"].includes(file.path) && !file.path.startsWith("dist/")) {
+      if (!isPublicationFile(delivery, file.path)) {
         throw new Error(`${item.name}: forbidden candidate file ${file.path}`);
       }
     }

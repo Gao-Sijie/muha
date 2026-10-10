@@ -55,7 +55,7 @@ jobs:
         with:
           name: npm-candidate
           path: .scratch/npm-candidate/*
-          # The candidate verifier permits exactly nine sanitized files here.
+          # Seven tarballs and three sanitized release metadata files.
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
@@ -117,7 +117,6 @@ jobs:
       - run: npm run build --silent
       - name: Cold public Registry installs and lockfile npm ci
         env:
-          MUHA_PUBLIC_REGISTRY_VERSION: '0.1.13'
           MUHA_REGISTRY_CANDIDATE: .scratch/npm-candidate
         run: node --test --test-concurrency=2 test/contracts/package-install.test.mjs
 

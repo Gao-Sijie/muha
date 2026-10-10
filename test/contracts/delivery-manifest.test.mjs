@@ -7,7 +7,7 @@ import {
   MUHA_DELIVERY_PACKAGES,
 } from "../../scripts/delivery-manifest.mjs";
 
-test("the explicit delivery manifest covers Core and every official Adapter", async () => {
+test("the explicit delivery manifest covers Core, every official Adapter and the SDK entry", async () => {
   assert.equal(Object.isFrozen(MUHA_DELIVERY_PACKAGES), true);
   assert.deepEqual(
     MUHA_DELIVERY_PACKAGES.map(({ packageName }) => packageName),
@@ -18,6 +18,7 @@ test("the explicit delivery manifest covers Core and every official Adapter", as
       "@muha-sdk/kimi-adapter",
       "@muha-sdk/pi-adapter",
       "@muha-sdk/agy-adapter",
+      "muha",
     ],
   );
   assert.deepEqual(

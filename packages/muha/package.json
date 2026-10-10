@@ -1,11 +1,8 @@
 {
-  "name": "@muha-sdk/core",
+  "name": "muha",
   "version": "0.1.14",
-  "description": "Common runtime primitives for Muha SDK coding harness integrations.",
+  "description": "One TypeScript API for Codex, OpenCode, Kimi Code, Pi, and AGY.",
   "type": "module",
-  "scripts": {
-    "build:native": "node scripts/build-native.mjs"
-  },
   "engines": {
     "node": ">=22.20.0"
   },
@@ -13,31 +10,30 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    },
-    "./internal": {
-      "types": "./dist/internal.d.ts",
-      "default": "./dist/internal.js"
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.zh-CN.md"
   ],
   "sideEffects": false,
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/Gao-Sijie/muha.git",
-    "directory": "packages/core"
+    "directory": "packages/muha"
   },
   "bugs": {
     "url": "https://github.com/Gao-Sijie/muha/issues"
   },
-  "homepage": "https://github.com/Gao-Sijie/muha/tree/main/packages/core#readme",
+  "homepage": "https://github.com/Gao-Sijie/muha#readme",
   "dependencies": {
-    "@agentclientprotocol/sdk": "1.4.0",
-    "add-mcp": "2.0.0",
-    "skills": "1.5.21",
-    "zod": "4.6.5"
+    "@muha-sdk/core": "0.1.14",
+    "@muha-sdk/codex-adapter": "0.1.14",
+    "@muha-sdk/opencode-adapter": "0.1.14",
+    "@muha-sdk/kimi-adapter": "0.1.14",
+    "@muha-sdk/pi-adapter": "0.1.14",
+    "@muha-sdk/agy-adapter": "0.1.14"
   },
   "publishConfig": {
     "access": "public",

@@ -2,8 +2,9 @@
 
 Core Runtime, Workspace, Agent Session, Turn, event, error, and diagnostic-storage contracts for [Muha SDK](https://github.com/Gao-Sijie/muha).
 
-Install this package together with only the official Adapter packages you use.
-V0.1.13 supports Node.js `>=22.20.0` on Linux x64 glibc and WSL2. Consumers
+Install the complete SDK with `npm install muha`, or install this package together
+with only the official Adapter packages you use.
+V0.1.14 supports Node.js `>=22.20.0` on Linux x64 glibc and WSL2. Consumers
 must independently install and authenticate the Codex, OpenCode, Kimi and AGY native
 commands and make them available on `PATH`; Muha never installs, upgrades, downloads,
 authenticates, or repairs those native commands. The Pi Adapter is a
@@ -176,7 +177,7 @@ files; it is not applied to the Workspace worker.
 Diagnostic records contain complete, unredacted native data. V0.1 provides no encryption, retention, pruning, rotation, delete, query, replay, or export API,
 so storage can grow without bound. Different Harnesses are not semantically
 equivalent and Muha does not promise identical output. V0.1 explicitly does not support
-third-party Harness registration. V0.1.13 supports the five-official-Harness
+third-party Harness registration. V0.1.14 supports the five-official-Harness
 set, including Pi and AGY; the [current qualification](https://github.com/Gao-Sijie/muha/blob/main/QUALIFICATION.md)
 records source and exceptions; the [AGY qualification](https://github.com/Gao-Sijie/muha/blob/main/QUALIFICATION.md)
 retains AGY's model-level effort N/A. Qualification evidence and publication acceptance are recorded separately.

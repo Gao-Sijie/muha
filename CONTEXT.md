@@ -9,8 +9,12 @@ Short for `muli-harness-sdk`: a TypeScript library that gives local and CI autom
 _Avoid_: Hosted agent service, multi-tenant gateway, harness replacement
 
 **Muha Release**:
-A lockstep, checksummed SDK artifact set containing Muha Core and all five official Harness Adapters, identified by one SemVer and an explicit delivery manifest. Its publication and consumer acceptance apply to those six packages; Orchestrator has an independent private release.
+A lockstep, checksummed SDK artifact set containing the Muha SDK Entry Package, Muha Core and all five official Harness Adapters, identified by one SemVer and an explicit delivery manifest. Its publication and consumer acceptance apply to all seven packages; Orchestrator has an independent private release.
 _Avoid_: Individual package release, staggered Adapter release, Orchestrator release
+
+**Muha SDK Entry Package**:
+The complete SDK distribution entry that exposes Core's public control model and all five official Harness Registrations together. Installing it does not enable a Harness; each Runtime explicitly chooses its Registrations.
+_Avoid_: Harness, automatic runtime, native tool installer
 
 **Muha Runtime**:
 The explicit process-local owner of shared Muha resources and the Harness instances created from them.

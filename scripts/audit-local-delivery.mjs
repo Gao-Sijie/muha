@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { deliveryResources, MUHA_DELIVERY_PACKAGES } from "./delivery-manifest.mjs";
+import { deliveryResources, isPublicationFile, publicationFiles, validateDeliveryDependencies, MUHA_DELIVERY_PACKAGES } from "./delivery-manifest.mjs";
 import { auditProductionDependencies } from "./dependency-audit.mjs";
 import { bindDependencyLicenseEvidence } from "./dependency-license-evidence.mjs";
 
@@ -16,7 +16,7 @@ const lock = JSON.parse(lockBytes);
 const problems = [], packages = [], resources = [], packageHooks = {};
 if (workspace.private !== true) problems.push("the root workspace must remain private");
 if (JSON.stringify(workspace.workspaces) !== JSON.stringify(MUHA_DELIVERY_PACKAGES.map(item => `packages/${item.directory}`))) {
-  problems.push("the root must contain exactly the six official SDK workspaces");
+  problems.push("the root must contain exactly the official SDK delivery workspaces");
 }
 const digest = bytes => createHash("sha256").update(bytes).digest("hex");
 const sorted = object => JSON.stringify(Object.fromEntries(Object.entries(object ?? {}).sort(([a], [b]) => a.localeCompare(b))));
@@ -36,7 +36,7 @@ for (const delivery of MUHA_DELIVERY_PACKAGES) {
       }
       const paths = result[0].files.map(file => file.path);
       for (const path of paths) {
-        if (path.split("/").includes("docs") || !["package.json", "LICENSE", "README.md"].includes(path) && !path.startsWith("dist/")) {
+        if (!isPublicationFile(delivery, path)) {
           problems.push(`${manifest.name}: file outside the publication allowlist: ${path}`);
         }
       }
@@ -50,7 +50,12 @@ for (const delivery of MUHA_DELIVERY_PACKAGES) {
   if (manifest.publishConfig?.access !== "public" || manifest.publishConfig?.registry !== "https://registry.npmjs.org/") {
     problems.push(`${manifest.name}: must explicitly publish publicly to the npm registry`);
   }
-  if (JSON.stringify(manifest.files) !== JSON.stringify(["dist"])) problems.push(`${manifest.name}: unexpected files allowlist`);
+  if (JSON.stringify(manifest.files) !== JSON.stringify(publicationFiles(delivery))) problems.push(`${manifest.name}: unexpected files allowlist`);
+  try { validateDeliveryDependencies(delivery, manifest.dependencies, manifest.version); }
+  catch (error) { problems.push(error.message); }
+  if (delivery.role === "umbrella" && (manifest.optionalDependencies || manifest.peerDependencies)) {
+    problems.push(`${manifest.name}: the complete SDK must use ordinary production dependencies`);
+  }
   const locked = lock.packages?.[`packages/${delivery.directory}`];
   if (locked?.version !== manifest.version || sorted(locked?.dependencies) !== sorted(manifest.dependencies)) {
     problems.push(`${manifest.name}: workspace lock entry does not match its manifest`);
@@ -88,7 +93,7 @@ for (const delivery of MUHA_DELIVERY_PACKAGES) {
   }
 }
 const versions = new Set(packages.map(({ manifest }) => manifest.version));
-if (versions.size !== 1) problems.push("the six SDK packages do not share one version");
+if (versions.size !== 1) problems.push("the SDK delivery packages do not share one version");
 const names = new Set(packages.map(({ manifest }) => manifest.name));
 for (const { manifest } of packages) {
   for (const [name, spec] of Object.entries(manifest.dependencies ?? {})) {

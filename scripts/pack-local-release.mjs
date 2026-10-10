@@ -135,6 +135,7 @@ try {
     KIMI_FILENAME: requireFilename(filenames, "@muha-sdk/kimi-adapter"),
     PI_FILENAME: requireFilename(filenames, "@muha-sdk/pi-adapter"),
     AGY_FILENAME: requireFilename(filenames, "@muha-sdk/agy-adapter"),
+    MUHA_FILENAME: requireFilename(filenames, "muha"),
   });
   await writeFile(join(stagingDirectory, "README.md"), readme, { mode: 0o600 });
   await writeFile(join(stagingDirectory, "SHA256SUMS"), `${checksumLines.join("\n")}\n`, {

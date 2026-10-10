@@ -1,6 +1,6 @@
 {
   "name": "@muha-sdk/agy-adapter",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "Official native AGY CLI adapter for Muha SDK.",
   "type": "module",
   "engines": {
@@ -30,7 +30,7 @@
   },
   "homepage": "https://github.com/Gao-Sijie/muha/tree/main/packages/agy-adapter#readme",
   "dependencies": {
-    "@muha-sdk/core": "0.1.13"
+    "@muha-sdk/core": "0.1.14"
   },
   "publishConfig": {
     "access": "public",

@@ -9,7 +9,8 @@
     "packages/opencode-adapter",
     "packages/kimi-adapter",
     "packages/pi-adapter",
-    "packages/agy-adapter"
+    "packages/agy-adapter",
+    "packages/muha"
   ],
   "engines": {
     "node": ">=22.20.0"
