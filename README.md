@@ -10,9 +10,6 @@ Each agent keeps its own models, tools, permissions, and conversation history.
 
 ## Install
 
-> Version 0.1.15 is being prepared for npm publication. Until `@muha-sdk/muha` is published,
-> use the existing [individual packages](#install-only-what-you-need).
-
 ```sh
 npm install @muha-sdk/muha
 ```

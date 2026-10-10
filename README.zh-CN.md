@@ -9,9 +9,6 @@
 
 ## 安装
 
-> 0.1.15 正在准备 npm 发布。在 `@muha-sdk/muha` 发布完成前，请使用已有的
-> [按需安装方式](#按需安装)。
-
 ```sh
 npm install @muha-sdk/muha
 ```
