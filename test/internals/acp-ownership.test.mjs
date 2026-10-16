@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { spawn } from "node:child_process";
@@ -16,7 +17,7 @@ test("helper death reports ownership loss even while native descendants hold std
   const pidsFile = join(root, "pids.json");
   const losses = [];
   const owned = new AcpOwnedProcess(process.execPath,
-    [new URL("../fixtures/acp-owned-process.mjs", import.meta.url).pathname],
+    [fileURLToPath(new URL("../fixtures/acp-owned-process.mjs", import.meta.url))],
     { ...process.env, MUHA_TEST_OWNED_PIDS: pidsFile }, 150, message => losses.push(message));
   let pids = [];
   try {
@@ -51,7 +52,7 @@ test("ACP close reaps SIGTERM-resistant descendants, is repeatable, and preserve
   const unrelatedExit = once(unrelated, "exit");
   const losses = [];
   const connection = new AcpConnection({
-    command: process.execPath, args: [new URL("../fixtures/acp-owned-process.mjs", import.meta.url).pathname],
+    command: process.execPath, args: [fileURLToPath(new URL("../fixtures/acp-owned-process.mjs", import.meta.url))],
     env: { MUHA_TEST_OWNED_PIDS: pidsFile }, startupTimeoutMs: 2000, shutdownTimeoutMs: 200,
   }, { onNotification() {}, onLoss: error => losses.push(error) }, { harness: "opencode", command: process.execPath });
   let pids = [];

@@ -21,7 +21,7 @@ test('process observation detects a live child and its eventual disappearance', 
   assert.equal(await hasProcessStopped(child.pid), true);
 });
 
-test('process observation accepts ESRCH when an opened proc stat outlives the child', async t => {
+test('process observation accepts ESRCH when an opened proc stat outlives the child', { skip: process.platform === 'win32' ? 'Linux proc file descriptor semantics; Windows live/disappeared PID is checked above' : false }, async t => {
   const child = await childFixture(t);
   const stat = await open(`/proc/${child.pid}/stat`, 'r');
   t.after(() => stat.close());

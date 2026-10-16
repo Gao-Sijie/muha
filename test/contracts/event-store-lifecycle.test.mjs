@@ -14,6 +14,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
+import { execFileSync } from "node:child_process";
+import { preparePrivateDataDirectory, checkPrivateDataFiles } from "../../packages/core/dist/host-process.js";
 import test from "node:test";
 
 import { createMuhaRuntime, MuhaError } from "@muha-sdk/core";
@@ -30,13 +32,13 @@ test("a supported legacy store migrates atomically and appends Runtime history",
   let first;
   let second;
   try {
-    await mkdir(dataDir, { mode: 0o755 });
+    await fixtureDirectory(dataDir, 0o755);
     createLegacyDatabase(databasePath);
     await chmod(databasePath, 0o600);
 
     first = await createMuhaRuntime({ harnesses: [inertRegistration()], dataDir });
     const firstRuntimeId = first.runtimeId;
-    assert.equal((await stat(dataDir)).mode & 0o777, 0o755);
+    if (process.platform !== "win32") assert.equal((await stat(dataDir)).mode & 0o777, 0o755);
     await first.close();
     first = undefined;
 
@@ -73,7 +75,7 @@ test("newer, malformed, corrupt, and unsafe stores are rejected without replacem
   const root = await mkdtemp(join(tmpdir(), "muha-store-rejection-"));
   try {
     const newer = join(root, "newer");
-    await mkdir(newer, { mode: 0o700 });
+    await fixtureDirectory(newer);
     const newerPath = join(newer, databaseFilename);
     const newerDatabase = new DatabaseSync(newerPath);
     newerDatabase.exec("PRAGMA user_version = 2");
@@ -89,7 +91,7 @@ test("newer, malformed, corrupt, and unsafe stores are rejected without replacem
     unchangedNewer.close();
 
     const malformed = join(root, "malformed");
-    await mkdir(malformed, { mode: 0o700 });
+    await fixtureDirectory(malformed);
     const malformedPath = join(malformed, databaseFilename);
     const malformedDatabase = new DatabaseSync(malformedPath);
     malformedDatabase.exec("CREATE TABLE runtime_instances (runtime_id TEXT PRIMARY KEY) STRICT");
@@ -105,7 +107,7 @@ test("newer, malformed, corrupt, and unsafe stores are rejected without replacem
     unchangedMalformed.close();
 
     const corrupt = join(root, "corrupt");
-    await mkdir(corrupt, { mode: 0o700 });
+    await fixtureDirectory(corrupt);
     const corruptPath = join(corrupt, databaseFilename);
     const corruptBytes = Buffer.from("not a sqlite database\0keep this evidence");
     await writeFile(corruptPath, corruptBytes, { mode: 0o600 });
@@ -113,12 +115,13 @@ test("newer, malformed, corrupt, and unsafe stores are rejected without replacem
     assert.deepEqual(await readFile(corruptPath), corruptBytes);
 
     const unsafe = join(root, "unsafe");
-    await mkdir(unsafe, { mode: 0o700 });
+    await fixtureDirectory(unsafe);
     const unsafePath = join(unsafe, databaseFilename);
     createLegacyDatabase(unsafePath);
     await chmod(unsafePath, 0o644);
-    await assertStoreOpenFailure(unsafe, /unsafe permissions/);
-    assert.equal((await stat(unsafePath)).mode & 0o777, 0o644);
+    if (process.platform === "win32") execFileSync("icacls.exe", [unsafePath, "/grant", "*S-1-1-0:(R)"], { windowsHide: true });
+    await assertStoreOpenFailure(unsafe, /unsafe permissions|access control is unsafe/);
+    if (process.platform !== "win32") assert.equal((await stat(unsafePath)).mode & 0o777, 0o644);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -131,21 +134,30 @@ test("Muha-created Store directories and sensitive files use owner-only modes", 
   let runtime;
   try {
     runtime = await createMuhaRuntime({ harnesses: [inertRegistration()], dataDir });
-    assert.equal((await stat(parent)).mode & 0o777, 0o700);
-    assert.equal((await stat(dataDir)).mode & 0o777, 0o700);
+    if (process.platform === "win32") await preparePrivateDataDirectory(dataDir);
+    else {
+      assert.equal((await stat(parent)).mode & 0o777, 0o700);
+      assert.equal((await stat(dataDir)).mode & 0o777, 0o700);
+    }
     for (const filename of [
       databaseFilename,
       `${databaseFilename}-wal`,
       `${databaseFilename}-shm`,
       `${databaseFilename}.lease`,
     ]) {
-      assert.equal((await stat(join(dataDir, filename))).mode & 0o777, 0o600, filename);
+      if (process.platform === "win32") checkPrivateDataFiles([join(dataDir, filename)]);
+      else assert.equal((await stat(join(dataDir, filename))).mode & 0o777, 0o600, filename);
     }
   } finally {
     await runtime?.close();
     await rm(root, { recursive: true, force: true });
   }
 });
+
+async function fixtureDirectory(path, mode = 0o700) {
+  if (process.platform === "win32") return preparePrivateDataDirectory(path);
+  return mkdir(path, { mode });
+}
 
 test("one cross-process owner fails competitors promptly and crash recovery releases ownership", async () => {
   const root = await mkdtemp(join(tmpdir(), "muha-store-owner-"));

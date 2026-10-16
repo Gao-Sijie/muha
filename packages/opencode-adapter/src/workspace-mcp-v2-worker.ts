@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { lstat, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 import { applyEdits, modify, parse, type ParseError } from "jsonc-parser";
 import type { McpServerConfig } from "@muha-sdk/core";
@@ -12,7 +12,7 @@ for await (const chunk of process.stdin) raw += String(chunk);
 try {
   const request: unknown = JSON.parse(raw);
   if (!isRecord(request) || typeof request.workspacePath !== "string" ||
-      !request.workspacePath.startsWith("/") || !isRecord(request.server)) {
+      !isAbsolute(request.workspacePath) || !isRecord(request.server)) {
     throw new Error("Invalid OpenCode v2 MCP request");
   }
   await configure(request as unknown as Request);

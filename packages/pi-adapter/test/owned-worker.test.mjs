@@ -7,13 +7,13 @@ import test from "node:test";
 import { pathToFileURL } from "node:url";
 import { PiOwnedWorker } from "../dist/pi-owned-worker.js";
 
-test("Pi ownership helper loss fails close without claiming descendant reclamation", { timeout: 10000 }, async t => {
+test("Pi ownership helper loss fails close without claiming descendant reclamation", { timeout: process.platform === "win32" ? 30000 : 10000 }, async t => {
   const root = await mkdtemp(join(tmpdir(), "muha-pi-owner-loss-"));
   const pidFile = join(root, "sdk.pid"), preload = join(root, "identity.mjs");
   await writeFile(preload, `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));`);
   let nativePid;
   t.after(async () => {
-    if (nativePid) { try { process.kill(-nativePid, "SIGKILL"); } catch (error) { if (error.code !== "ESRCH") throw error; } }
+    if (nativePid && process.platform !== "win32") { try { process.kill(-nativePid, "SIGKILL"); } catch (error) { if (error.code !== "ESRCH") throw error; } }
     await rm(root, { recursive: true, force: true });
   });
   let reportLoss;

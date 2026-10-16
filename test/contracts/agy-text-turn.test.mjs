@@ -14,7 +14,7 @@ test("AGY creates an independent Workspace-bound Session and preserves ordered t
   const alias = join(root, "workspace-alias");
   let runtime;
   await mkdir(workspace);
-  await symlink(workspace, alias);
+  await symlink(workspace, alias, process.platform === "win32" ? "junction" : "dir");
   await writeFile(join(workspace, "source.txt"), "workspace-evidence");
   try {
     runtime = await createMuhaRuntime({

@@ -278,7 +278,7 @@ test("OpenCode resume compares the native Session directory by canonical Workspa
   let runtime;
   let session;
   await Promise.all([mkdir(workspace), mkdir(otherWorkspace)]);
-  await symlink(workspace, alias, "dir");
+  await symlink(workspace, alias, process.platform === "win32" ? "junction" : "dir");
   await writeFile(sessionsFile, JSON.stringify([
     { id: "ses_alias", directory: alias },
     { id: "ses_other", directory: otherWorkspace },

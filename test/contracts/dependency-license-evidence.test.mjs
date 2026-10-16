@@ -30,7 +30,7 @@ test("local delivery preserves exact supplemental Pi dependency license resource
 test("unbundled OpenCode client license-body gaps remain explicit upstream evidence", async () => {
   const audit = await auditLocalDelivery();
   const names = ["@opencode/client", "@opencode/protocol", "@opencode/schema",
-    "@msgpackr-extract/msgpackr-extract-linux-x64"];
+    `@msgpackr-extract/msgpackr-extract-${process.platform === "win32" ? "win32" : "linux"}-x64`];
   for (const name of names) {
     const node = audit.dependencyClosure.find((entry) => entry.name === name);
     assert.equal(node?.licenseEvidence?.status, "blocked", name);

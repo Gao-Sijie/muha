@@ -19,6 +19,7 @@ import { Worker } from "node:worker_threads";
 
 import { codexAdapter } from "@muha-sdk/codex-adapter";
 import { createMuhaRuntime, MuhaError } from "@muha-sdk/core";
+import { preparePrivateDataDirectory } from "../../packages/core/dist/host-process.js";
 
 const fakeHarnessBin = resolve(import.meta.dirname, "../fixtures/harness-bin");
 
@@ -51,8 +52,8 @@ test("a caller can create and close a Codex-backed Muha Runtime", async () => {
     ),
   );
 
-  await mkdir(actualDataDir);
-  await symlink(actualDataDir, dataDirAlias, "dir");
+  await preparePrivateDataDirectory(actualDataDir);
+  await symlink(actualDataDir, dataDirAlias, process.platform === "win32" ? "junction" : "dir");
 
   let runtime;
   try {
@@ -249,7 +250,7 @@ test("unexecutable, early-exit, and unready Codex commands fail cleanly", async 
   try {
     for (const failureCase of cases) {
       const bin = join(root, `${failureCase.name}-bin`);
-      const command = join(bin, "codex");
+      const command = join(bin, process.platform === "win32" && !failureCase.executable ? "codex.exe" : "codex");
       const pidFile = join(root, `${failureCase.name}.pid`);
       await mkdir(bin);
       await writeFile(command, failureCase.source, { mode: 0o644 });
@@ -278,7 +279,7 @@ test("unexecutable, early-exit, and unready Codex commands fail cleanly", async 
                 MUHA_FAKE_PID_FILE: pidFile,
               },
               startupTimeoutMs: failureCase.timedOut ? 50 : 2_000,
-              shutdownTimeoutMs: 50,
+              shutdownTimeoutMs: process.platform === "win32" ? 500 : 50,
             }),
           ],
           dataDir: join(root, `${failureCase.name}-diagnostics`),
@@ -349,6 +350,7 @@ test("the default data directory is isolated beneath the process home", async ()
         env: {
           ...process.env,
           HOME: isolatedHome,
+          USERPROFILE: isolatedHome,
           MUHA_FAKE_PATH: controlledPath,
         },
         timeout: 5_000,
@@ -452,7 +454,7 @@ test("close forcefully reclaims an unresponsive ready Codex within its bound", a
             MUHA_FAKE_PID_FILE: pidFile,
           },
           startupTimeoutMs: 2_000,
-          shutdownTimeoutMs: 25,
+          shutdownTimeoutMs: process.platform === "win32" ? 500 : 25,
         }),
       ],
       dataDir: join(root, "diagnostics"),
@@ -491,7 +493,7 @@ test("unsupported runtime and host observations fail before any Harness starts",
     },
     {
       setup:
-        'Object.defineProperty(process, "report", { value: { getReport: () => ({ header: {} }) } });',
+        'Object.defineProperty(process, "platform", { value: "linux" }); Object.defineProperty(process, "report", { value: { getReport: () => ({ header: {} }) } });',
       expectedCode: "UNSUPPORTED_PLATFORM",
     },
   ];
@@ -541,6 +543,15 @@ async function readNumberFileEventually(path) {
 }
 
 async function assertPathEventuallyMissing(path) {
+  if (process.platform === "win32" && /^\/proc\/\d+$/.test(path)) {
+    const pid = Number(path.slice(6));
+    const deadline = Date.now() + 1000;
+    for (;;) {
+      try { process.kill(pid, 0); } catch (error) { if (error.code === "ESRCH") return; throw error; }
+      assert.ok(Date.now() < deadline, `process ${pid} remains live`);
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+  }
   const deadline = Date.now() + 1_000;
   while (true) {
     try {

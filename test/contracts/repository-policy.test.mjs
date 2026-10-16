@@ -32,6 +32,13 @@ test('the SDK index and current committed tree contain no docs paths', () => {
   }
 });
 
+test('the CLI default inspects its own repository from a different working directory', async t => {
+  const { directory } = await fixture(t);
+  const result = spawnSync(process.execPath, [script], { cwd: directory, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Git index.*no docs paths/);
+});
+
 test('ignored root and nested docs leave a clean repository acceptable', async t => {
   const { directory, git } = await fixture(t);
   for (const relative of ['docs/plan.md', 'packages/core/docs/private.md']) {

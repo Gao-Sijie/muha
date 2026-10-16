@@ -2,15 +2,17 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
-import { lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { copyFile, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 import { promisify } from "node:util";
+import { npmCommand } from "../../scripts/npm-command.mjs";
 import { MUHA_DELIVERY_PACKAGES } from "../../scripts/delivery-manifest.mjs";
 import { controlledPi } from "../../packages/pi-adapter/test/support/controlled-pi.mjs";
 
 const execute = promisify(execFile);
 async function run(command, args, options) {
+  if (command === "npm") [command, args] = npmCommand(args);
   return execute(command, args, { timeout: 120000, maxBuffer: 8 * 1024 * 1024, ...options });
 }
 
@@ -113,10 +115,11 @@ export async function verifyUmbrellaConsumer({ repositoryRoot, registryVersion, 
       "--typeRoots", join(repositoryRoot, "node_modules/@types"), "example.mts"], { cwd: consumer, env });
     const nodeOnly = join(root, "node-only");
     await mkdir(nodeOnly);
-    await symlink(process.execPath, join(nodeOnly, "node"));
+    if (process.platform === "win32") await copyFile(process.execPath, join(nodeOnly, "node.exe"));
+    else await symlink(process.execPath, join(nodeOnly, "node"));
     await writeFile(join(consumer, "readme-home.mjs"),
       'import os from "node:os"; import {syncBuiltinESMExports} from "node:module"; os.homedir = () => process.env.MUHA_README_HOME; syncBuiltinESMExports();\n');
-    const readmeEnvironment = { ...env, PATH: `${join(repositoryRoot, "test/fixtures/harness-bin")}:${nodeOnly}`,
+    const readmeEnvironment = { ...env, PATH: [join(repositoryRoot, "test/fixtures/harness-bin"), nodeOnly].join(delimiter),
       MUHA_README_HOME: join(root, "readme-home"), MUHA_FAKE_NATIVE_SESSIONS_FILE: join(root, "codex-sessions.json") };
     await run(process.execPath, ["--import", "./readme-home.mjs", "example.mjs"], { cwd: consumer, env: readmeEnvironment });
     const answer = join(root, "question-answer.json");

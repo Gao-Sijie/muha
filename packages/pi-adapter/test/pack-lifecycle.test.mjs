@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { npmCommand } from "../../../scripts/npm-command.mjs";
 import { promisify } from "node:util";
 import test from "node:test";
 import { controlledPi } from "./support/controlled-pi.mjs";
@@ -11,7 +12,7 @@ test(`${operation} does not break concurrent consumers loading the installed Pi 
   const packing = (async () => {
     for (let i = 0; i < 4; i++) {
       await Promise.all(Array.from({ length: operation === "build:sdk" ? 2 : 1 }, () =>
-        promisify(execFile)("npm", ["run", operation, "--workspace", "@muha-sdk/pi-adapter"], {
+        promisify(execFile)(...npmCommand(["run", operation, "--workspace", "@muha-sdk/pi-adapter"]), {
           cwd: new URL("../../../", import.meta.url), timeout: 10000,
         })));
     }

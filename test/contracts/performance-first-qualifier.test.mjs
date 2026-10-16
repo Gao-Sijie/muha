@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 const script = new URL("../../scripts/qualify-real-harness.mjs", import.meta.url);
 
@@ -13,7 +14,7 @@ test("fixed effort probes use model-specific alternate native values rather than
 });
 
 function invoke(args, env = {}) {
-  return spawnSync(process.execPath, [script.pathname, ...args], {
+  return spawnSync(process.execPath, [fileURLToPath(script), ...args], {
     cwd: new URL("../..", import.meta.url),
     encoding: "utf8",
     timeout: 10_000,

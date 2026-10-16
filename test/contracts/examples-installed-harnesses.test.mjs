@@ -15,27 +15,33 @@ async function directory(t) {
 }
 
 async function executable(path) {
-  await writeFile(path, '#!/bin/sh\nexit 99\n', { mode: 0o700 });
+  await writeFile(nativePath(path), '#!/bin/sh\nexit 99\n', { mode: 0o700 });
 }
+const nativePath = path => process.platform === 'win32' ? path + '.exe' : path;
 
 for (const [name, discover] of [['chat', chatInstalled], ['editorial', editorialInstalled]]) {
   test(name + ' discovers only executable native CLI files, without executing them', async t => {
     const root = await directory(t), first = join(root, 'first bin'), second = join(root, 'second');
     await mkdir(first); await mkdir(second);
     const marker = join(root, 'must-not-execute');
-    await writeFile(join(first, 'codex'), '#!/bin/sh\ntouch "' + marker + '"\nexit 99\n', { mode: 0o700 });
+    await writeFile(nativePath(join(first, 'codex')), '#!/bin/sh\ntouch "' + marker + '"\nexit 99\n', { mode: 0o700 });
     await writeFile(join(first, 'opencode'), 'not executable', { mode: 0o600 });
     await mkdir(join(first, 'kimi'));
     await executable(join(first, 'antigravity-cli')); // A package/configuration name, not the native executable.
     const path = [join(root, 'absent'), first, second, first].join(delimiter);
     assert.deepEqual(await discover(path), ['codex', 'pi']);
-    await symlink(join(first, 'codex'), join(second, 'opencode'));
+    if (process.platform === 'win32') {
+      await writeFile(join(second, 'opencode.cmd'), '@echo off\r\n"%~dp0\\..\\first bin\\codex.exe" %*\r\n');
+    } else await symlink(join(first, 'codex'), join(second, 'opencode'));
     await executable(join(second, 'agy'));
     assert.deepEqual(await discover(path), ['codex', 'opencode', 'pi', 'agy']);
-    await symlink(join(root, 'missing-target'), join(second, 'kimi'));
+    if (process.platform === 'win32') {
+      await writeFile(join(second, 'kimi.cmd'), '@echo off\r\n"%dp0%\\missing-target.exe" %*\r\n');
+    } else await symlink(join(root, 'missing-target'), join(second, 'kimi'));
     assert.deepEqual(await discover(path), ['codex', 'opencode', 'pi', 'agy']);
     await assert.rejects(readFile(marker), { code: 'ENOENT' });
-    await chmod(join(first, 'codex'), 0o600);
+    if (process.platform === 'win32') await rm(nativePath(join(first, 'codex')));
+    else await chmod(join(first, 'codex'), 0o600);
     assert.deepEqual(await discover(path), ['pi', 'agy']);
   });
 
@@ -54,8 +60,19 @@ for (const [name, discover] of [['chat', chatInstalled], ['editorial', editorial
     await executable(join(root, 'antigravity-cli'));
     assert.deepEqual(await discover(root), ['pi'], 'the old package/configuration name must not count as an installed AGY');
     await executable(join(root, nativeCommand));
-    await rm(join(root, 'antigravity-cli'));
+    await rm(nativePath(join(root, 'antigravity-cli')));
     assert.deepEqual(await discover(root), ['pi', 'agy'], 'an executable agy is sufficient without antigravity-cli');
+  });
+
+  test(name + ' discovers Windows Node bins and npm shims without evaluating shell commands', { skip: process.platform !== 'win32' }, async t => {
+    const root = await directory(t);
+    await writeFile(join(root, 'codex'), '#!/usr/bin/env node\nthrow new Error("must not run");\n');
+    await writeFile(join(root, 'entry.js'), 'throw new Error("must not run");\n');
+    await writeFile(join(root, 'opencode.cmd'), '@echo off\r\n"%dp0%\\entry.js" %*\r\n');
+    await writeFile(join(root, 'agy.cmd'), '@echo off\r\necho arbitrary shell command\r\n');
+    assert.deepEqual(await discover(root), ['codex', 'opencode', 'pi']);
+    await rm(join(root, 'entry.js'));
+    assert.deepEqual(await discover(root), ['codex', 'pi']);
   });
 }
 

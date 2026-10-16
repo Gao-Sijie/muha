@@ -9,7 +9,7 @@ export function packedDependencyFiles(archive) {
   if (listing.error || listing.status !== 0) {
     throw new Error(`Cannot inspect packed dependency files: ${archive}`);
   }
-  return listing.stdout.split("\n")
+  return listing.stdout.split(/\r?\n/)
     .filter(path => path.startsWith("package/node_modules/") && !path.endsWith("/"))
     .map(path => path.slice("package/".length));
 }

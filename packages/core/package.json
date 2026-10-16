@@ -17,6 +17,10 @@
     "./internal": {
       "types": "./dist/internal.d.ts",
       "default": "./dist/internal.js"
+    },
+    "./internal/host-process": {
+      "types": "./dist/host-process.d.ts",
+      "default": "./dist/host-process.js"
     }
   },
   "files": [

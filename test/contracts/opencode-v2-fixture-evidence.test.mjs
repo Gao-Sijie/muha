@@ -17,6 +17,9 @@ test("OpenCode v2 fixture evidence remains complete during concurrent requests",
     stdio: ["pipe", "pipe", "pipe"],
   });
   const lines = createInterface({ input: child.stdout });
+  let stderr = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", chunk => { stderr += chunk; });
   try {
     const ready = await new Promise((resolveReady, rejectReady) => {
       lines.once("line", (line) => resolveReady(JSON.parse(line)));
@@ -54,7 +57,7 @@ test("OpenCode v2 fixture evidence remains complete during concurrent requests",
       reads += 1;
       if (reads >= 3_000) break;
     }
-    await requests;
+    try { await requests; } catch (error) { throw new Error(`Fixture request failed: ${error.cause?.code ?? error.message}; ${stderr}`, { cause: error }); }
     if (parseFailure) throw parseFailure;
     assert.ok(reads >= 300);
   } finally {

@@ -43,6 +43,7 @@ import {
   type HarnessIntegrationRoute,
 } from "./reference.js";
 import { assertSupportedHost } from "./platform.js";
+import { spawnHarnessProcess, closeHarnessProcess, harnessProcessExitCode } from "./host-process.js";
 import { currentRuntimeScheduler } from "./scheduler.js";
 import type { HarnessKind, HarnessRegistration } from "./index.js";
 import type { HarnessCapabilities, SessionSelectionPoint } from "./capabilities.js";
@@ -1084,6 +1085,10 @@ function runWorkspaceProcess(
       resolve(succeeded);
     };
     const reclaim = () => {
+      if (process.platform === "win32" && child) {
+        void closeHarnessProcess(child, 5000).then(() => finish(false), () => finish(false));
+        return;
+      }
       const pid = child?.pid;
       if (Number.isSafeInteger(pid) && pid !== undefined && pid > 1) {
         try {
@@ -1102,7 +1107,7 @@ function runWorkspaceProcess(
     const abort = () => reclaim();
     let child: ChildProcess | undefined;
     try {
-      child = spawn(process.execPath, [invocation.entrypoint, ...invocation.args], {
+      child = spawnHarnessProcess(process.execPath, [invocation.entrypoint, ...invocation.args], {
         cwd: workspacePath,
         detached: true,
         env: {
@@ -1118,7 +1123,8 @@ function runWorkspaceProcess(
       return;
     }
     child.once("error", () => finish(false));
-    child.once("exit", (code, signal) => finish(code === 0 && signal === null));
+    child.once(process.platform === "win32" ? "close" : "exit", (code, signal) =>
+      finish((process.platform === "win32" ? harnessProcessExitCode(child!) : code) === 0 && signal === null));
     if (invocation.stdin !== undefined && child.stdin) {
       child.stdin.on("error", reclaim);
       child.stdin.end(invocation.stdin);

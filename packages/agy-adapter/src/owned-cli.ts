@@ -4,6 +4,7 @@ import type { Duplex, Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import type { HarnessErrorData } from "@muha-sdk/core";
 import type { LiveHarnessAdapterContext } from "@muha-sdk/core/internal";
+import { spawnHarnessProcess } from "@muha-sdk/core/internal/host-process";
 import { bounded, Deferred, failure, object, type JsonObject } from "./protocol.js";
 
 // The independent helper owns/reaps its descendants. Nothing changes the
@@ -31,7 +32,10 @@ export class OwnedCli {
     onLoss: (error: HarnessErrorData) => void, operation: HarnessErrorData["operation"]) {
     this.#shutdownMs = shutdownMs;
     this.#onLoss = onLoss;
-    this.#child = spawn(fileURLToPath(new URL("./agy-supervisor", import.meta.url)),
+    this.#child = process.platform === "win32"
+      ? spawnHarnessProcess("agy", args, { cwd, env, shell: false, stdio: ["pipe", "pipe", "pipe"] }, shutdownMs, false,
+        undefined, fileURLToPath(new URL("./agy-supervisor.exe", import.meta.url)))
+      : spawn(fileURLToPath(new URL("./agy-supervisor", import.meta.url)),
       [String(Math.min(1_000, Math.floor(shutdownMs / 2))), "agy", ...args],
       { cwd, env, shell: false, stdio: ["pipe", "pipe", "pipe", "pipe"] });
     this.#control = this.#child.stdio[3] as Duplex;
@@ -61,7 +65,7 @@ export class OwnedCli {
           // stdout and fd3 are independent pipes: drain semantic responses
           // before classifying an exit, especially an explicit startup ERROR.
           void this.#outputEnded.promise.then(() => this.#incoming).then(() => lose("AGY native process exited"), () => lose("AGY output failed before exit"));
-        } else if (event.type === "error") lose(`AGY supervisor failed during ${String(event.operation)} (${String(event.errno)})`);
+        } else if (event.type === "error") lose(`AGY supervisor failed during ${String(event.operation)} (${String(event.win32 ?? event.errno)})`);
       } catch { lose("Invalid AGY ownership response"); }
     });
     const output = this.#child.stdout as Readable;

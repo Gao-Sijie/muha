@@ -79,7 +79,7 @@ test("Kimi bounded close forcefully reclaims an unresponsive server", async () =
           MUHA_FAKE_PID_FILE: pidFile,
         },
         startupTimeoutMs: 2_000,
-        shutdownTimeoutMs: 50,
+        shutdownTimeoutMs: process.platform === "win32" ? 500 : 50,
       })],
       dataDir: join(root, "diagnostics"),
     });

@@ -3,17 +3,17 @@ import { spawn } from "node:child_process";
 import { dirname, delimiter, resolve } from "node:path";
 import { once } from "node:events";
 import test from "node:test";
+import { spawnHarnessProcess, harnessEnvironment } from "@muha-sdk/core/internal/host-process";
 
 const fakeHarnessBin = resolve(import.meta.dirname, "../fixtures/harness-bin");
 
 test("a controlled PATH can provide a deterministic Codex executable", async () => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 2_000);
-  const child = spawn("codex", ["app-server", "--stdio"], {
-    env: {
-      ...process.env,
+  const child = spawnHarnessProcess("codex", ["app-server", "--stdio"], {
+    env: harnessEnvironment({
       PATH: [fakeHarnessBin, dirname(process.execPath)].join(delimiter),
-    },
+    }),
     signal: controller.signal,
     stdio: ["pipe", "pipe", "pipe"],
   });

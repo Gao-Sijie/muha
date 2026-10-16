@@ -2,6 +2,8 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
 import type { Duplex } from "node:stream";
 import { fileURLToPath } from "node:url";
+import { randomUUID } from "node:crypto";
+import { spawnHarnessProcess } from "@muha-sdk/core/internal/host-process";
 
 // The exact Core dependency ships this private, qualified Linux subreaper.
 // fd3 carries ownership control; fd4 carries Node's unchanged SDK IPC protocol.
@@ -17,7 +19,11 @@ export class PiOwnedWorker {
   constructor(env: NodeJS.ProcessEnv, readonly shutdownMs: number,
     readonly onLoss: (message: string) => void) {
     const supervisor = new URL("./acp-supervisor", import.meta.resolve("@muha-sdk/core"));
-    this.child = spawn(fileURLToPath(supervisor),
+    const pipe = `\\\\.\\pipe\\muha-pi-${randomUUID()}`;
+    this.child = process.platform === "win32"
+      ? spawnHarnessProcess(process.execPath, [fileURLToPath(new URL("./sdk-worker.mjs", import.meta.url))],
+        { env: { ...env, MUHA_INTERNAL_PI_PIPE: pipe }, stdio: ["ignore", "ignore", "ignore"] }, shutdownMs, false, pipe)
+      : spawn(fileURLToPath(supervisor),
       [String(Math.min(1000, Math.floor(shutdownMs / 4))), process.execPath,
         fileURLToPath(new URL("./sdk-worker.mjs", import.meta.url))],
       { env, stdio: ["ignore", "ignore", "ignore", "pipe", "ipc"], serialization: "json" });
@@ -39,12 +45,37 @@ export class PiOwnedWorker {
         } else if (event.type === "closed") {
           this.#reaped = event.noChildren === true && event.cleanupError === false;
         } else if (event.type === "error") {
-          lose(`Pi supervisor failed during ${String(event.operation)} (${String(event.errno)})`);
+          lose(`Pi supervisor failed during ${String(event.operation)} (${String(event.win32 ?? event.errno)})`);
         } else if (!["spawned", "nativeExit", "closing"].includes(String(event.type))) {
           lose("Invalid Pi ownership response");
         }
       } catch { lose("Invalid Pi ownership response"); }
     });
+    if (process.platform === "win32") {
+      const data = this.child.stdio[4] as Duplex;
+      let disconnected = false, buffer = "";
+      Object.defineProperty(this.child, "connected", { get: () => !disconnected && !data.destroyed });
+      this.child.send = ((message: unknown, ...args: unknown[]) => {
+        const callback = [...args].reverse().find(value => typeof value === "function") as ((error: Error | null) => void) | undefined;
+        return data.write(JSON.stringify(message) + "\n", error => callback?.(error ?? null));
+      }) as ChildProcess["send"];
+      this.child.disconnect = () => { disconnected = true; data.end(); };
+      data.setEncoding("utf8");
+      data.on("data", (part: string) => {
+        buffer += part;
+        if (Buffer.byteLength(buffer) > 64 * 1024 * 1024) { lose("Pi transport frame exceeds its bound"); data.destroy(); return; }
+        let end: number;
+        while ((end = buffer.indexOf("\n")) >= 0) {
+          const line = buffer.slice(0, end); buffer = buffer.slice(end + 1);
+          try { this.child.emit("message", JSON.parse(line)); }
+          catch { lose("Invalid Pi worker transport frame"); data.destroy(); return; }
+        }
+      });
+      const disconnect = () => { if (!disconnected) { disconnected = true; this.child.emit("disconnect"); } };
+      data.on("end", disconnect);
+      data.on("close", disconnect);
+      data.on("error", () => lose("Pi worker data channel failed"));
+    }
     this.exited = new Promise((resolve, reject) => {
       this.child.once("error", () => {
         lose("Pi ownership helper could not start");
@@ -93,5 +124,6 @@ export class PiOwnedWorker {
   #release(): void {
     this.#control.destroy();
     if (this.child.connected) this.child.disconnect();
+    if (process.platform === "win32") this.child.stdio[4]?.destroy();
   }
 }

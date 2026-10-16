@@ -6,14 +6,15 @@ import { realpath } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { tmpdir } from "node:os";
 import { createInterface } from "node:readline";
+import { spawnHarnessProcess, closeHarnessProcess, harnessEnvironment } from "@muha-sdk/core/internal/host-process";
 
 export async function trustKimiQualificationWorkspace(root, workspace, options = {}) {
   assert.ok(root === await realpath(root) && workspace === await realpath(workspace) &&
     root.startsWith(join(await realpath(tmpdir()), "muha-pf-kimi-")) &&
     /^muha-pf-kimi-[\w-]+$/.test(basename(root)) && workspace === join(root, "workspace"),
   "trust is restricted to the owned qualification workspace");
-  const child = spawn("kimi", ["web", "--no-open", "--host", "127.0.0.1", "--port", "0"], {
-    detached: true, env: options.env ?? process.env, stdio: ["pipe", "pipe", "pipe"],
+  const child = spawnHarnessProcess("kimi", ["web", "--no-open", "--host", "127.0.0.1", "--port", "0"], {
+    detached: true, env: harnessEnvironment(options.env), stdio: ["pipe", "pipe", "pipe"],
   });
   child.stdin.end();
   child.stderr.resume();
@@ -34,6 +35,7 @@ export async function trustKimiQualificationWorkspace(root, workspace, options =
     return envelope.data;
   };
   const stop = async () => {
+    if (process.platform === "win32") { await closeHarnessProcess(child, 5000); lines.close(); return; }
     if (!exited) {
       process.kill(-child.pid, "SIGTERM");
       const timer = setTimeout(() => { if (!exited) process.kill(-child.pid, "SIGKILL"); }, 3_000);

@@ -1,5 +1,47 @@
 # SDK qualification and migration provenance
 
+## Native Windows x64 candidate (2026-10-15/16)
+
+This branch adds a native Windows ownership helper, private NTFS diagnostic
+storage checks and a Windows pipe transport for Pi. Earlier Linux qualification
+records below retain their original source and platform scope. The candidate's
+full Windows qualification remains PENDING; the latest Pi entry blocks
+publication. Multi-platform release assembly is also pending.
+
+The user authorized real Windows model tests with the repository Profiles.
+On Windows 11 x64 / Node 22.23.3, Codex 0.162.1 (`gpt-5.6-luna`), OpenCode
+2.0.28 (`opencode-go/deepseek-v4.1-flash`), Kimi 2.1.1
+(`deepseek/deepseek-flash`) and the pinned Pi SDK 1.0.4
+(`opencode-go/deepseek-v4.1-flash`) each passed three actual Turns: text,
+same-Session continuation, and a native file Tool after Session resumption in a
+new Runtime. Every accepted Turn had one completed terminal, host-owned native
+diagnostic records were present, and Runtime close succeeded. These twelve
+Turns used concurrency one, no Muha retries, a 60-second per-attempt deadline
+and a three-attempt per-Harness limit within a 30-minute overall bound.
+
+AGY 1.3.5 rejected the fixed `claude-sonnet-4-6` model during Session creation,
+before any model Turn. Its current catalog advertises Sonnet 5.5. No substitute
+model was selected and AGY real-model qualification remains blocked.
+
+The paid receipt identifies the preceding candidate snapshot. Subsequent
+Windows path/environment, private declaration and packaging fixes receive
+controlled verification; the paid smoke was not repeated on the final source.
+This candidate follows main's Pi SDK 1.2.0 migration and rebased input patch.
+The earlier Windows Pi SDK 1.0.4 smoke remains historical; additional Windows
+Pi 1.2.0 paid verification is pending. Private receipts stay in ignored
+paths. Bounded smoke does not qualify every declared Windows capability or a
+consumer application, and no Registry publication was performed.
+
+The current Windows 11 x64 candidate, including main's Pi SDK 1.2.0 migration,
+passed `npm run check`: repository index policy, typecheck, native builds,
+602 SDK contracts (24 historical/opt-in skips), and 63 Pi contracts (one
+Linux-specific process-observation skip). The controlled examples, package
+isolation, umbrella cold install and lockfile replay passed. Earlier npm
+Registry timeout failures remain in private receipts; this final run had zero
+failures. Linux CI and full Windows capability qualification remain pending.
+
+## Preserved qualification history
+
 The `@muha-sdk/muha` entry package in 0.1.15 re-exports the same public Core
 API and five official Adapter factories. Seven packages now form the SDK release;
 the Official Harness Set remains unchanged. Entry loading, one-dependency installs,

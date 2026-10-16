@@ -8,6 +8,12 @@ import { pathToFileURL } from "node:url";
 import { controlledPi, completedTurn } from "./support/controlled-pi.mjs";
 import { hasProcessStopped } from "./support/process-state.mjs";
 
+// MSYS Bash's $$ is not a Win32 PID. A real native child supplies the identity
+// used by the Windows process-liveness assertion, inside the same Bash tool.
+const waitingCommand = process.platform === "win32"
+  ? JSON.stringify(process.execPath.replaceAll("\\", "/")) + ` -e 'require("fs").writeFileSync("bash.pid",String(process.pid));setInterval(()=>{},1000)'`
+  : "echo $$ > bash.pid; sleep 60";
+
 test("Pi interrupts an accepted image/text request and can continue the same Session", { timeout: 15000 }, async t => {
   let requested;
   const firstRequest = new Promise(resolve => { requested = resolve; });
@@ -94,7 +100,7 @@ for (const delayedSpawn of [false, true]) {
       response.writeHead(200, { "Content-Type": "text/event-stream" });
       response.end(`data: ${JSON.stringify({ id: "bash", object: "chat.completion.chunk", created: 1, model: "controlled",
         choices: [{ index: 0, delta: { role: "assistant", tool_calls: [{ index: 0, id: "bash-1", type: "function",
-          function: { name: "bash", arguments: JSON.stringify({ command: "echo $$ > bash.pid; sleep 60" }) } }] },
+          function: { name: "bash", arguments: JSON.stringify({ command: waitingCommand }) } }] },
         finish_reason: "tool_calls" }] })}\n\ndata: [DONE]\n\n`);
     });
     if (delayedSpawn) {
@@ -131,7 +137,7 @@ for (const delayedSpawn of [false, true]) {
       if (!bashPid) await delay(10);
     }
     assert.ok(bashPid > 1, "Native Bash tool did not start");
-    t.after(() => { try { process.kill(-bashPid, "SIGKILL"); } catch {} });
+    t.after(() => { try { process.kill(process.platform === "win32" ? bashPid : -bashPid, "SIGKILL"); } catch {} });
     process.kill(Number(await readFile(sdkPidFile, "utf8")), "SIGKILL");
     assert.equal((await turn.result).status, "failed");
     await runtime.close();

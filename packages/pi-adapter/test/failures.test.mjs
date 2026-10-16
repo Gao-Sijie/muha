@@ -3,6 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { controlledPi, completedTurn } from "./support/controlled-pi.mjs";
+import { enableFixtureIpc } from "./support/worker-ipc-fixture.mjs";
 
 test("Pi preserves Core empty-message semantics and rejects missing messages as protocol failures", async t => {
   const fixture = await controlledPi(t, (_request, response) => {
@@ -33,6 +34,7 @@ for (const [label, message] of [
 ]) {
   test(`Pi quarantines ${label} as a protocol failure without Harness retries`, { timeout: 10000 }, async t => {
     const fixture = await controlledPi(t, () => {});
+    await enableFixtureIpc(fixture);
     await mkdir(join(fixture.agentDir, "extensions"));
     await writeFile(join(fixture.agentDir, "extensions", "invalid-protocol.ts"), `
       export default pi => pi.on("agent_start", () => { setTimeout(() => process.send(${JSON.stringify(message)}), 20); });

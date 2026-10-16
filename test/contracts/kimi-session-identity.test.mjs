@@ -18,7 +18,7 @@ test("Kimi resume compares native cwd by canonical Workspace identity", async ()
   let session;
   try {
     await mkdir(workspace);
-    await symlink(workspace, workspaceAlias, "dir");
+    await symlink(workspace, workspaceAlias, process.platform === "win32" ? "junction" : "dir");
     const canonicalWorkspace = await realpath(workspace);
     await writeFile(sessionsFile, JSON.stringify([{
       id: "session_alias",

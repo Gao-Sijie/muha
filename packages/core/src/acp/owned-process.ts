@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
 import type { Duplex } from "node:stream";
 import { fileURLToPath } from "node:url";
+import { spawnHarnessProcess } from "../host-process.js";
 
 /** Private Linux subreaper. fd3 controls ownership; stdin/out belong to ACP.
  * It never changes the consumer's signal handlers or reaps its other children.
@@ -21,7 +22,9 @@ export class AcpOwnedProcess {
   constructor(command: string, args: readonly string[], env: NodeJS.ProcessEnv, shutdownMs: number,
     onLoss: (message: string, kind: "ownership" | "native") => void) {
     this.#shutdownMs = shutdownMs;
-    const child = spawn(fileURLToPath(new URL("../acp-supervisor", import.meta.url)),
+    const child = process.platform === "win32"
+      ? spawnHarnessProcess(command, args, { cwd: process.cwd(), env, shell: false, stdio: ["pipe", "pipe", "pipe"] }, shutdownMs, false)
+      : spawn(fileURLToPath(new URL("../acp-supervisor", import.meta.url)),
       [String(Math.min(1000, Math.floor(shutdownMs / 2))), command, ...args],
       { cwd: process.cwd(), env, shell: false, stdio: ["pipe", "pipe", "pipe", "pipe"] });
     this.child = child as ChildProcessWithoutNullStreams;
@@ -39,7 +42,7 @@ export class AcpOwnedProcess {
         } else if (event.type === "closed") {
           this.#reaped = event.noChildren === true && event.cleanupError === false;
         } else if (event.type === "error") {
-          lose(`ACP supervisor failed during ${String(event.operation)} (${String(event.errno)})`);
+          lose(`ACP supervisor failed during ${String(event.operation)} (${String(event.win32 ?? event.errno)})`);
         }
       } catch { lose("Invalid ACP ownership response"); }
     });

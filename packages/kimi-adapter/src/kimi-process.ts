@@ -5,6 +5,7 @@ import { isAbsolute } from "node:path";
 import { createInterface, type Interface } from "node:readline";
 
 import type { HarnessErrorData, OfficialAdapterOptions } from "@muha-sdk/core";
+import { spawnHarnessProcess, closeHarnessProcess, harnessEnvironment } from "@muha-sdk/core/internal/host-process";
 import type {
   AdapterCreateSessionOptions,
   AdapterListedSession,
@@ -56,15 +57,11 @@ export class KimiProcess implements LiveHarnessAdapter {
   ) {}
 
   async initialize(): Promise<void> {
-    const environment: NodeJS.ProcessEnv = { ...process.env };
-    for (const [name, value] of Object.entries(this.options.env ?? {})) {
-      if (value === undefined) delete environment[name];
-      else environment[name] = value;
-    }
+    const environment = harnessEnvironment(this.options.env);
 
     let child: ChildProcessWithoutNullStreams;
     try {
-      child = spawn(
+      child = spawnHarnessProcess(
         "kimi",
         ["web", "--no-open", "--host", "127.0.0.1", "--port", "0"],
         {
@@ -73,7 +70,8 @@ export class KimiProcess implements LiveHarnessAdapter {
           shell: false,
           stdio: ["pipe", "pipe", "pipe"],
         },
-      );
+        this.options.shutdownTimeoutMs ?? defaultTimeoutMs,
+      ) as ChildProcessWithoutNullStreams;
     } catch (error) {
       throw failure("initialize", "spawn", error);
     }
@@ -726,6 +724,7 @@ export class KimiProcess implements LiveHarnessAdapter {
     this.#socketReady = false;
     const child = this.#child;
     if (!child) return;
+    if (process.platform === "win32") return closeHarnessProcess(child, this.options.shutdownTimeoutMs ?? defaultTimeoutMs);
     const pid = this.#processGroupId;
     if (hasExited(child)) {
       if (pid !== undefined) signalProcessGroup(pid, "SIGKILL");
@@ -743,6 +742,7 @@ export class KimiProcess implements LiveHarnessAdapter {
   async #forceReclaim(): Promise<void> {
     const child = this.#child;
     if (!child) return;
+    if (process.platform === "win32") return closeHarnessProcess(child, this.options.shutdownTimeoutMs ?? defaultTimeoutMs);
     const pid = this.#processGroupId;
     if (pid !== undefined) signalProcessGroup(pid, "SIGKILL");
     if (hasExited(child)) return;

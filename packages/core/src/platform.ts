@@ -22,13 +22,12 @@ export function assertSupportedHost(): void {
   const libc = report?.header?.glibcVersionRuntime ? "glibc" : "unknown";
   if (
     !isMainThread ||
-    process.platform !== "linux" ||
     process.arch !== "x64" ||
-    libc !== "glibc"
+    !(process.platform === "win32" || (process.platform === "linux" && libc === "glibc"))
   ) {
     throw new MuhaError({
       code: "UNSUPPORTED_PLATFORM",
-      message: "Muha V0.1 requires a Linux x64 glibc main-thread process",
+      message: "Muha requires a Linux x64 glibc or Windows x64 main-thread process",
       platform: process.platform,
       architecture: process.arch,
       libc,

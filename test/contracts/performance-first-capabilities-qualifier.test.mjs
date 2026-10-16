@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
@@ -6,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { delimiter, dirname } from "node:path";
 
-const script = new URL("../../scripts/qualify-performance-capabilities.mjs", import.meta.url).pathname;
+const script = fileURLToPath(new URL("../../scripts/qualify-performance-capabilities.mjs", import.meta.url));
 
 test("Kimi qualification trusts only its owned fixture and revokes native trust before stopping", async () => {
   const { trustKimiQualificationWorkspace } = await import("../../scripts/kimi-qualification-trust.mjs");
@@ -18,7 +19,7 @@ test("Kimi qualification trusts only its owned fixture and revokes native trust 
   try {
     await assert.rejects(trustKimiQualificationWorkspace(root, root), /owned qualification workspace/);
     const close = await trustKimiQualificationWorkspace(root, workspace, {
-      env: { ...process.env, PATH: [new URL("../fixtures/harness-bin", import.meta.url).pathname,
+      env: { ...process.env, PATH: [fileURLToPath(new URL("../fixtures/harness-bin", import.meta.url)),
         dirname(process.execPath)].join(delimiter), MUHA_FAKE_KIMI_EVIDENCE_FILE: evidence },
     });
     await close();
@@ -91,7 +92,7 @@ test("qualification MCP fixture negotiates tools and generates a receipt only fo
   const root = await mkdtemp(join(tmpdir(), "muha-proof-mcp-test-"));
   const receipt = join(root, "receipt.jsonl");
   try {
-    const fixture = new URL("../../scripts/fixtures/performance-proof-mcp.mjs", import.meta.url).pathname;
+    const fixture = fileURLToPath(new URL("../../scripts/fixtures/performance-proof-mcp.mjs", import.meta.url));
     const child = spawnSync(process.execPath, [fixture, receipt], { encoding: "utf8", input: [
       { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2024-11-05" } },
       { jsonrpc: "2.0", method: "notifications/initialized" },

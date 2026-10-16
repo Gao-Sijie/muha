@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { npmCommand } from "../../../scripts/npm-command.mjs";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { loadSdk } from "../dist/sdk-loader.mjs";
@@ -270,6 +271,7 @@ test("a clean consumer installs the declared Pi SDK and uses the verified input 
   const root = await mkdtemp(join(tmpdir(), "muha-pi-packed-test-"));
   const repo = fileURLToPath(new URL("../../../", import.meta.url));
   const run = (command, args, cwd, input) => {
+    if (command === "npm") [command, args] = npmCommand(args);
     const result = spawnSync(command, args, { cwd, input, encoding: "utf8", timeout: 120000,
       env: { ...process.env, npm_config_audit: "false", npm_config_fund: "false" }, maxBuffer: 8 * 1024 * 1024 });
     assert.equal(result.status, 0, result.stderr || result.stdout || String(result.error));

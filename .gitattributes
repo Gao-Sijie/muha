@@ -1,0 +1,3 @@
+# Source qualification hashes and Pi's verified patch use exact file bytes.
+# Keep checkout bytes stable on Windows as well as Linux.
+* text=auto eol=lf

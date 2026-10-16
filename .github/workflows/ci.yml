@@ -29,3 +29,22 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+
+  windows-contract:
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version:
+          - "22.20.0"
+          - "lts/*"
+          - "current"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - run: npm run check:repository -- . HEAD
+      - run: npm ci
+      - run: npm run check

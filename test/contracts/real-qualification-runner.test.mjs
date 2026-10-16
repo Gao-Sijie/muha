@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
@@ -51,7 +52,7 @@ test("real Pi qualification opts in to three Muha retries without changing other
 });
 
 test("Pi image and full qualification require explicit models before native startup", () => {
-  const script = new URL("../../scripts/qualify-real-harness.mjs", import.meta.url).pathname;
+  const script = fileURLToPath(new URL("../../scripts/qualify-real-harness.mjs", import.meta.url));
   const wrongImage = spawnSync(process.execPath, [script, "pi", "--image"], {
     encoding: "utf8", env: { ...process.env, MUHA_QUALIFY_PI_MODEL: "opencode-go/deepseek-v4.1-flash" },
   });
@@ -68,7 +69,7 @@ test("Pi image and full qualification require explicit models before native star
 
 test("the real qualification runner preflights the explicitly selected Harness before startup", () => {
   const result = spawnSync(process.execPath, [
-    new URL("../../scripts/qualify-real-harness.mjs", import.meta.url).pathname,
+    fileURLToPath(new URL("../../scripts/qualify-real-harness.mjs", import.meta.url)),
     "codex", "--preprobe",
   ], {
     encoding: "utf8",
@@ -84,7 +85,7 @@ test("the real qualification runner preflights the explicitly selected Harness b
 
 test("the real qualification runner accepts a bounded image-only diagnostic mode", () => {
   const result = spawnSync(process.execPath, [
-    new URL("../../scripts/qualify-real-harness.mjs", import.meta.url).pathname,
+    fileURLToPath(new URL("../../scripts/qualify-real-harness.mjs", import.meta.url)),
     "opencode", "--image",
   ], {
     encoding: "utf8",
@@ -99,7 +100,7 @@ test("the real qualification runner rejects every unknown Harness deterministica
   for (const harness of ["unknown-harness", "__proto__", "constructor"]) {
     await t.test(harness, () => {
       const result = spawnSync(process.execPath, [
-        new URL("../../scripts/qualify-real-harness.mjs", import.meta.url).pathname,
+        fileURLToPath(new URL("../../scripts/qualify-real-harness.mjs", import.meta.url)),
         harness,
       ], { encoding: "utf8" });
 

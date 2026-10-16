@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import type { DataDirLockedErrorData, EventStoreErrorData } from "./errors.js";
+import { checkPrivateDataFiles, preparePrivateDataDirectory } from "./host-process.js";
 
 const currentSchemaVersion = 1;
 const databaseFilename = "diagnostic-events.sqlite";
@@ -39,8 +40,7 @@ export class DiagnosticEventStore {
     let database: DatabaseSync | undefined;
     let lease: DatabaseSync | undefined;
     try {
-      await mkdir(requestedDataDir, { recursive: true, mode: 0o700 });
-      const dataDir = await realpath(requestedDataDir);
+      const dataDir = await preparePrivateDataDirectory(requestedDataDir);
       const databasePath = join(dataDir, databaseFilename);
       const leasePath = join(dataDir, leaseFilename);
       const sensitivePaths = [
@@ -56,7 +56,7 @@ export class DiagnosticEventStore {
       await ensurePrivateFile(leasePath);
       lease = new DatabaseSync(leasePath);
       acquireLease(lease, dataDir);
-      await chmod(leasePath, 0o600);
+      if (process.platform !== "win32") await chmod(leasePath, 0o600);
 
       // The lease closes the race between checking an existing database and
       // opening it. Re-check files that another former owner could have left.
@@ -325,10 +325,12 @@ function rollback(database: DatabaseSync): void {
 async function ensurePrivateFile(path: string): Promise<void> {
   const handle = await openFile(path, "a", 0o600);
   await handle.close();
-  await chmod(path, 0o600);
+  if (process.platform === "win32") checkPrivateDataFiles([path]);
+  else await chmod(path, 0o600);
 }
 
 async function assertSafeExistingFiles(paths: readonly string[]): Promise<void> {
+  if (process.platform === "win32") { checkPrivateDataFiles(paths); return; }
   for (const path of paths) {
     let metadata;
     try {
@@ -344,6 +346,7 @@ async function assertSafeExistingFiles(paths: readonly string[]): Promise<void> 
 }
 
 async function protectSensitiveFiles(paths: readonly string[]): Promise<void> {
+  if (process.platform === "win32") { checkPrivateDataFiles(paths); return; }
   for (const path of paths) {
     try {
       await chmod(path, 0o600);

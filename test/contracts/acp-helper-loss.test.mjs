@@ -5,6 +5,7 @@ import { delimiter, dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
+import { processSnapshot, assertProcessGone } from "../support/host-process.mjs";
 import { createMuhaRuntime } from "@muha-sdk/core";
 import { codexAdapter } from "@muha-sdk/codex-adapter";
 import { createOfficialHarnessRegistration, readOfficialHarnessRegistration } from "../../packages/core/dist/internal.js";
@@ -52,7 +53,7 @@ async function receivedRequest(endpoint, method) {
 }
 
 async function signalOwned(pid, root, signal) {
-  const command = await readFile(`/proc/${pid}/cmdline`, "utf8").catch(() => "");
+  const command = (await processSnapshot(pid).catch(() => undefined))?.commandLine ?? "";
   if (!command) return false;
   assert.ok(Number.isSafeInteger(pid) && pid > 1 && command.includes("acp-agent.mjs") && command.includes(`--test-owner=${root}`),
     "only this test's recorded endpoint or helper may be signalled");
@@ -145,7 +146,8 @@ for (const lostKind of ["opencode", "codex"]) test(`${lostKind} ACP helper loss 
       const evidence = JSON.parse(await readFile(endpoint.evidenceFile, "utf8"));
       assert.equal(evidence.prompts.length, 1, "no cross-route or same-route replay");
     }
-    assert.match(await readFile(`/proc/${nativePid}/cmdline`, "utf8"), /acp-agent\.mjs/,
+    if (process.platform === "win32") await assertProcessGone(nativePid);
+    else assert.match(await readFile(`/proc/${nativePid}/cmdline`, "utf8"), /acp-agent\.mjs/,
       "fixture must still hold stdio: Runtime termination is not proof of descendant reclamation");
     for (const { nativePid, helperPid } of await processes(peer)) {
       await assert.rejects(readFile(`/proc/${nativePid}/cmdline`), { code: "ENOENT" });
@@ -178,7 +180,8 @@ test("ACP helper loss during initialization rejects promptly and rolls back the 
     assert.ok(outcome.error.data.initializationFailures.some(error => error.harness === "opencode"));
     assert.ok(outcome.error.data.rollbackFailures.some(error => error.code === "HARNESS_ERROR" && error.harness === "opencode" && error.operation === "closeHarness"),
       "initialization error must disclose failed descendant cleanup, not an empty successful rollback");
-    assert.match(await readFile(`/proc/${nativePid}/cmdline`, "utf8"), /acp-agent\.mjs/);
+    if (process.platform === "win32") await assertProcessGone(nativePid);
+    else assert.match(await readFile(`/proc/${nativePid}/cmdline`, "utf8"), /acp-agent\.mjs/);
     for (const { nativePid, helperPid } of await processes(peer)) {
       await assert.rejects(readFile(`/proc/${nativePid}/cmdline`), { code: "ENOENT" });
       await assert.rejects(readFile(`/proc/${helperPid}/cmdline`), { code: "ENOENT" });
@@ -253,7 +256,7 @@ test("ACP helper loss during caller close stays closed and reports cleanup failu
   }
 });
 
-test("Codex combined helper loss preempts a Tool waiting for its missing native completion", { timeout: 10000 }, async () => {
+test("Codex combined helper loss preempts a Tool waiting for its missing native completion", { timeout: 10000, skip: process.platform === "win32" ? "Historical Linux Codex combined bridge qualification" : false }, async () => {
   const { CodexAcpProcess } = await import("../../packages/codex-adapter/dist/codex-acp.js");
   const root = await mkdtemp(join(tmpdir(), "muha-acp-helper-native-wait-"));
   const processFile = join(root, "combined-processes.json");

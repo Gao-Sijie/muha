@@ -2,15 +2,15 @@ import { loadSdk } from "./sdk-loader.mjs";
 import { listedSessions, openNativeSession } from "./sdk-sessions.mjs";
 import { sessionSettings, resolveModel, selection, selectEffort } from "./sdk-settings.mjs";
 import { bindExtensions } from "./sdk-extensions.mjs";
+import { createWorkerTransport } from "./sdk-worker-transport.mjs";
+const transport = await createWorkerTransport();
 const sdk = await loadSdk();
 let session;
 let modelRuntime;
 let extensions;
 let running;
 let interrupted = false;
-const send = message => new Promise((resolve, reject) => {
-  process.send(message, error => error ? reject(error) : resolve());
-});
+const send = message => transport.send(message);
 const diagnostic = (source, payload) => send({ type: "diagnostic", source, payload });
 
 async function create(options, resume = false) {
@@ -38,7 +38,7 @@ async function create(options, resume = false) {
   return { id: session.sessionId, ...selection(session) };
 }
 
-process.on("message", async message => {
+transport.onMessage(async message => {
   const { id, command, args } = message;
   const reply = value => send({ type: "reply", id, value });
   try {
@@ -87,7 +87,7 @@ process.on("message", async message => {
       interrupted = true; await session?.abort(); await running?.catch(() => {});
       await extensions?.settle();
       await extensions?.close(); session?.dispose();
-      process.disconnect();
+      transport.disconnect();
     } else throw new Error("Unknown Pi SDK command");
   } catch (error) { await send({ type: "reply", id, error: error.message,
     nativeCode: error.nativeCode, protocolError: error.protocolError }); }

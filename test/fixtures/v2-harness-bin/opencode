@@ -21,7 +21,13 @@ function persistEvidence() {
   const temporaryFile = `${evidenceFile}.${process.pid}.${++evidenceSequence}.tmp`;
   evidenceWrite = evidenceWrite.then(async () => {
     await writeFile(temporaryFile, snapshot);
-    await rename(temporaryFile, evidenceFile);
+    for (let attempt = 0; ; attempt++) {
+      try { await rename(temporaryFile, evidenceFile); break; }
+      catch (error) {
+        if (process.platform !== "win32" || !["EPERM", "EBUSY", "EACCES"].includes(error.code) || attempt >= 40) throw error;
+        await new Promise(resolve => setTimeout(resolve, 5));
+      }
+    }
   });
   return evidenceWrite;
 }

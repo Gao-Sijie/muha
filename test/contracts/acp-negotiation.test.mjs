@@ -13,7 +13,7 @@ test("ACP negotiates the actual integer-v1 initialization contract", async () =>
   try {
     runtime = await createMuhaRuntime({ harnesses: [controlledOpenCodeAdapter({ acp: acpOptions("normal", {
       MUHA_FAKE_ACP_EVIDENCE_FILE: evidenceFile,
-    }) })], dataDir: root });
+    }) })], dataDir: join(root, "diagnostics") });
     assert.equal(runtime.getHarnessCapabilities("opencode").imageInput, true);
     const coreManifest = JSON.parse(await readFile(join(import.meta.dirname, "../../packages/core/package.json"), "utf8"));
     const evidence = JSON.parse(await readFile(evidenceFile, "utf8"));

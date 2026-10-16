@@ -7,6 +7,7 @@ import { createInterface } from "node:readline";
 import { OpenCode, type OpenCodeClient } from "@opencode/client";
 import type { HarnessErrorData, OfficialAdapterOptions } from "@muha-sdk/core";
 import type { LiveHarnessAdapterContext } from "@muha-sdk/core/internal";
+import { spawnHarnessProcess, closeHarnessProcess, harnessEnvironment, harnessProcessPid } from "@muha-sdk/core/internal/host-process";
 import { orderedInputPluginID } from "./opencode-v2-order-plugin.js";
 
 const defaultTimeoutMs = 60_000;
@@ -38,11 +39,7 @@ export class OpenCodeV2Service {
   }
 
   async initialize(): Promise<void> {
-    const env: NodeJS.ProcessEnv = { ...process.env };
-    for (const [name, value] of Object.entries(this.options.env ?? {})) {
-      if (value === undefined) delete env[name];
-      else env[name] = value;
-    }
+    const env = harnessEnvironment(this.options.env);
     delete env.OPENCODE_SERVER_USERNAME;
     delete env.OPENCODE_SERVER_PASSWORD;
     env.OPENCODE_PASSWORD = this.password;
@@ -67,12 +64,12 @@ export class OpenCodeV2Service {
 
     let child: ChildProcessWithoutNullStreams;
     try {
-      child = spawn("opencode", ["serve", "--stdio", "--port", "0"], {
+      child = spawnHarnessProcess("opencode", ["serve", "--stdio", "--port", "0"], {
         detached: true,
         env,
         shell: false,
         stdio: ["pipe", "pipe", "pipe"],
-      });
+      }, this.options.shutdownTimeoutMs ?? defaultTimeoutMs) as ChildProcessWithoutNullStreams;
     } catch {
       await this.close();
       throw serviceFailure("initialize", "spawn");
@@ -156,7 +153,7 @@ export class OpenCodeV2Service {
         !isRecord(info) ||
         typeof info.version !== "string" ||
         !/^2\.\d+\.\d+(?:[-+].+)?$/.test(info.version) ||
-        info.pid !== child.pid ||
+        info.pid !== harnessProcessPid(child) ||
         !Array.isArray(info.urls) ||
         !info.urls.includes(baseUrl)
       ) throw serviceFailure("initialize", "handshake");
@@ -180,6 +177,7 @@ export class OpenCodeV2Service {
     const child = this.#child;
     try {
       if (!child) return;
+      if (process.platform === "win32") return await closeHarnessProcess(child, this.options.shutdownTimeoutMs ?? defaultTimeoutMs);
       child.stdin.end();
       const timeout = this.options.shutdownTimeoutMs ?? defaultTimeoutMs;
       if (await exitsWithin(child, timeout)) {

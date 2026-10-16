@@ -38,7 +38,7 @@ const profiles = createConformanceProfiles({
     },
   },
   pi: {
-    options: () => ({ env: { PATH: controlledPath } }),
+    options: () => ({ env: { PATH: controlledPath }, startupTimeoutMs: 30000 }),
     expected: {
       ...commonCapabilities, approvalPolicies: ["autoApprove", "harnessManaged"], turnQuestions: false, workspaceMcp: false,
       model: { selectionAt: allSelectionPoints, observation: "effective" },

@@ -1,3 +1,4 @@
+import { spawnNpmSync } from "./npm-command.mjs";
 // Offline identity/closure/license/resource audit, independent of npm advisory
 // data. All findings are explicit; a successful registry audit cannot mask one.
 import { createHash } from "node:crypto";
@@ -22,10 +23,10 @@ const digest = bytes => createHash("sha256").update(bytes).digest("hex");
 const sorted = object => JSON.stringify(Object.fromEntries(Object.entries(object ?? {}).sort(([a], [b]) => a.localeCompare(b))));
 for (const delivery of MUHA_DELIVERY_PACKAGES) {
   const manifest = JSON.parse(await readFile(join(root, "packages", delivery.directory, "package.json"), "utf8"));
-  const packed = spawnSync("npm", ["pack", "--dry-run", "--json"], {
+  const packed = spawnNpmSync(["pack", "--dry-run", "--json"], {
     cwd: join(root, "packages", delivery.directory), encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
   });
-  let bundledFiles = [];
+  let bundledFiles = [], packedFiles = [];
   if (packed.error || packed.status !== 0) {
     problems.push(`${manifest.name}: cannot inspect npm pack file list: ${packed.error?.message ?? packed.stderr}`);
   } else {
@@ -35,6 +36,7 @@ for (const delivery of MUHA_DELIVERY_PACKAGES) {
         throw new Error("invalid npm pack result");
       }
       const paths = result[0].files.map(file => file.path);
+      packedFiles = result[0].files;
       for (const path of paths) {
         if (!isPublicationFile(delivery, path)) {
           problems.push(`${manifest.name}: file outside the publication allowlist: ${path}`);
@@ -83,12 +85,14 @@ for (const delivery of MUHA_DELIVERY_PACKAGES) {
       const absolute = join(root, "packages", delivery.directory, path);
       const metadata = await stat(absolute);
       if (!metadata.isFile()) throw new Error("not a regular file");
-      if ((path.endsWith("-supervisor") || path.endsWith("/codex-observer-worker.js")) && !(metadata.mode & 0o111)) {
+      if (process.platform !== "win32" && (path.endsWith("-supervisor") || path.endsWith("/codex-observer-worker.js")) && !(metadata.mode & 0o111)) {
         problems.push(`${delivery.directory}/${path}: runtime entry is not executable`);
       }
       const sha256 = digest(await readFile(absolute));
       if (expectedSha256 !== undefined && sha256 !== expectedSha256) problems.push(`${delivery.directory}/${path}: locked runtime resource changed`);
-      resources.push({ package: manifest.name, path, bytes: metadata.size, mode: metadata.mode & 0o777, sha256 });
+      const mode = process.platform === "win32" ? packedFiles.find(file => file.path === path)?.mode : metadata.mode & 0o777;
+      if (!Number.isInteger(mode)) throw new Error("Cannot audit packed resource mode");
+      resources.push({ package: manifest.name, path, bytes: metadata.size, mode, sha256 });
     } catch { problems.push(`${delivery.directory}/${path}: missing required runtime resource`); }
   }
 }

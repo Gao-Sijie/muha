@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
+import { spawnNpmSync } from "./npm-command.mjs";
 import { mkdir, mkdtemp, readFile, readdir, rename, rm, rmdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
@@ -53,8 +54,7 @@ const stagingDirectory = await mkdtemp(join(dirname(outputDirectory), ".muha-rel
 try {
   const packages = [];
   for (const { delivery, manifest } of manifests) {
-    const result = spawnSync(
-      "npm",
+    const result = spawnNpmSync(
       ["pack", "--json", "--pack-destination", stagingDirectory],
       {
         cwd: join(repositoryRoot, "packages", delivery.directory),

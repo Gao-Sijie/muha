@@ -1,5 +1,6 @@
 import type { ChildProcess } from "node:child_process";
 import { PiOwnedWorker } from "./pi-owned-worker.js";
+import { harnessEnvironment } from "@muha-sdk/core/internal/host-process";
 import { randomUUID } from "node:crypto";
 import { PiEvents } from "./pi-events.js";
 import { piInput } from "./pi-input.js";
@@ -67,10 +68,7 @@ class PiWorker {
   session: PiSession | undefined;
   turn: PiTurn | undefined;
   constructor(readonly options: OfficialAdapterOptions, readonly context: LiveHarnessAdapterContext) {
-    const env = { ...process.env };
-    for (const [key, value] of Object.entries(options.env ?? {})) {
-      if (value === undefined) delete env[key]; else env[key] = value;
-    }
+    const env = harnessEnvironment(options.env);
     this.#owner = new PiOwnedWorker(env, this.options.shutdownTimeoutMs ?? 5000,
       message => this.#lost(message));
     this.#child = this.#owner.child;

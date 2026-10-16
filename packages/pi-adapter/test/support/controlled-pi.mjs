@@ -32,7 +32,7 @@ export async function controlledPi(t, respond) {
       compat: { supportsReasoningEffort: true },
       contextWindow: 100000, maxTokens: 1000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } })),
   } } }));
-  const options = { env: { PI_CODING_AGENT_DIR: agentDir }, startupTimeoutMs: 10000, shutdownTimeoutMs: 2000 };
+  const options = { env: { PI_CODING_AGENT_DIR: agentDir }, startupTimeoutMs: process.platform === "win32" ? 30000 : 10000, shutdownTimeoutMs: 2000 };
   let runtime;
   t.after(async () => {
     await runtime?.close();

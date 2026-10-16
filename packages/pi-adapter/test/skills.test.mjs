@@ -25,7 +25,7 @@ test("Pi Skills configuration preserves canonical Workspace isolation, empty inp
   const fixture = await controlledPi(t);
   const other = join(fixture.root, "other-workspace"), alias = join(fixture.root, "workspace-alias");
   await mkdir(other);
-  await symlink(fixture.workspace, alias, "dir");
+  await symlink(fixture.workspace, alias, process.platform === "win32" ? "junction" : "dir");
   for (const [workspace, marker] of [[fixture.workspace, "ONLY_APRICOT"], [other, "ONLY_PLUM"]]) {
     const source = join(workspace, "source", "isolated");
     await mkdir(source, { recursive: true });

@@ -28,7 +28,7 @@ test("a caller can stream one durable Codex text Turn", async () => {
   let session;
 
   await mkdir(workspace);
-  await symlink(workspace, workspaceAlias, "dir");
+  await symlink(workspace, workspaceAlias, process.platform === "win32" ? "junction" : "dir");
 
   try {
     runtime = await createMuhaRuntime({

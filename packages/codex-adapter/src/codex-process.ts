@@ -4,6 +4,7 @@ import { createInterface, type Interface } from "node:readline";
 import { setTimeout as delay } from "node:timers/promises";
 
 import type { HarnessErrorData, OfficialAdapterOptions } from "@muha-sdk/core";
+import { spawnHarnessProcess, closeHarnessProcess, harnessEnvironment, harnessProcessExitCode } from "@muha-sdk/core/internal/host-process";
 import type {
   AdapterCreateSessionOptions,
   AdapterListedSession,
@@ -68,20 +69,16 @@ export class CodexProcess implements LiveHarnessAdapter {
   }
 
   async initialize(): Promise<void> {
-    const environment: NodeJS.ProcessEnv = { ...process.env };
-    for (const [name, value] of Object.entries(this.#options.env ?? {})) {
-      if (value === undefined) delete environment[name];
-      else environment[name] = value;
-    }
+    const environment = harnessEnvironment(this.#options.env);
 
     let child: ChildProcessWithoutNullStreams;
     try {
-      child = spawn("codex", ["app-server", "--stdio", "-c", "thread_unload_delay_secs=0"], {
+      child = spawnHarnessProcess("codex", ["app-server", "--stdio", "-c", "thread_unload_delay_secs=0"], {
         detached: true,
         env: environment,
         shell: false,
         stdio: ["pipe", "pipe", "pipe"],
-      });
+      }, this.#options.shutdownTimeoutMs ?? defaultTimeoutMs) as ChildProcessWithoutNullStreams;
     } catch (error) {
       throw failure("initialize", "spawn", error);
     }
@@ -96,7 +93,8 @@ export class CodexProcess implements LiveHarnessAdapter {
       void this.#incoming.catch((error) => this.#rejectAll(normalizeFailure(error, "initialize", "handshake")));
     });
     child.once("error", (error) => this.#rejectAll(failure("initialize", "spawn", error)));
-    child.once("exit", (exitCode, signal) => {
+    child.once(process.platform === "win32" ? "close" : "exit", (observedCode, signal) => {
+      const exitCode = process.platform === "win32" ? harnessProcessExitCode(child) ?? observedCode : observedCode;
       const error = {
         code: "HARNESS_ERROR",
         message: "Codex control process exited",
@@ -572,6 +570,7 @@ export class CodexProcess implements LiveHarnessAdapter {
   async #performClose(): Promise<void> {
     const child = this.#child;
     if (!child) return;
+    if (process.platform === "win32") return closeHarnessProcess(child, this.#options.shutdownTimeoutMs ?? defaultTimeoutMs);
     const pid = this.#processGroupId;
     if (hasExited(child)) {
       if (pid !== undefined) killProcessGroup(pid);
@@ -590,6 +589,7 @@ export class CodexProcess implements LiveHarnessAdapter {
   async #forceReclaim(): Promise<void> {
     const child = this.#child;
     if (!child) return;
+    if (process.platform === "win32") return closeHarnessProcess(child, this.#options.shutdownTimeoutMs ?? defaultTimeoutMs);
     const pid = this.#processGroupId;
     if (pid !== undefined) killProcessGroup(pid);
     if (hasExited(child)) return;

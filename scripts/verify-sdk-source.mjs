@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const [rootArgument = new URL('../', import.meta.url).pathname,
-  manifestArgument = new URL('./fixtures/sdk-runtime-sha256.json', import.meta.url).pathname] = process.argv.slice(2);
+const [rootArgument = fileURLToPath(new URL('../', import.meta.url)),
+  manifestArgument = fileURLToPath(new URL('./fixtures/sdk-runtime-sha256.json', import.meta.url))] = process.argv.slice(2);
 const root = resolve(rootArgument);
 const manifest = JSON.parse(await readFile(manifestArgument, 'utf8'));
 const resources = [];

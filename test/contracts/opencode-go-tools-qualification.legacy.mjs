@@ -1,3 +1,5 @@
+import { spawnNpmSync } from "../../scripts/npm-command.mjs";
+import { fileURLToPath } from "node:url";
 // Historical v1 tool qualifier contract. Retained for archaeology; not v2 real-model evidence.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -11,7 +13,7 @@ import {
   observeTurn,
 } from "../../scripts/qualify-opencode-go-tool-model.mjs";
 
-const runner = new URL("../../scripts/qualify-opencode-go-tools.mjs", import.meta.url).pathname;
+const runner = fileURLToPath(new URL("../../scripts/qualify-opencode-go-tools.mjs", import.meta.url));
 const fakeWorker = resolve(import.meta.dirname, "../fixtures/qualification-bin/opencode-go-tool-worker");
 const fakeHarnessBin = resolve(import.meta.dirname, "../fixtures/harness-bin");
 const fakeQualificationBin = resolve(import.meta.dirname, "../fixtures/qualification-bin");
@@ -36,7 +38,7 @@ test("opencode-go tool qualification rejects an invalid explicit model without s
 });
 
 test("silent npm qualification entrypoint emits one JSON document on stdout", () => {
-  const result = spawnSync("npm", [
+  const result = spawnNpmSync([
     "run",
     "--silent",
     "qualify:opencode-go-tools",

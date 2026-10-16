@@ -1,3 +1,4 @@
+import { spawnNpmSync } from "../../scripts/npm-command.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -18,7 +19,7 @@ test("a packed dependency is visible in the archive even when the parent manifes
     }));
     await writeFile(join(child, "package.json"), JSON.stringify({ name: "fixture-child", version: "1.0.0" }));
     await writeFile(join(child, "index.js"), "module.exports = 1;\n");
-    const packed = spawnSync("npm", ["pack", "--json", "--pack-destination", root], {
+    const packed = spawnNpmSync(["pack", "--json", "--pack-destination", root], {
       cwd: root, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
     });
     assert.equal(packed.status, 0, packed.stderr || packed.stdout);

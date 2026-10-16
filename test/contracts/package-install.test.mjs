@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, delimiter, dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
+import { npmCommand } from "../../scripts/npm-command.mjs";
 import test from "node:test";
 import { controlledPi } from "../../packages/pi-adapter/test/support/controlled-pi.mjs";
 import { MUHA_DELIVERY_PACKAGES } from "../../scripts/delivery-manifest.mjs";
@@ -19,6 +20,7 @@ const registryVersion = process.env.MUHA_PUBLIC_REGISTRY_VERSION ?? (process.env
 const reviewedInstallScripts = JSON.parse(await readFile(join(repositoryRoot, "package.json"), "utf8")).allowScripts;
 if (registryVersion && !/^\d+\.\d+\.\d+$/.test(registryVersion)) throw new Error("Invalid public Registry version");
 function run(command, args, options = {}) {
+  if (command === "npm") [command, args] = npmCommand(args);
   const result = spawnSync(command, args, {
     encoding: "utf8",
     maxBuffer: 16 * 1024 * 1024,
@@ -129,6 +131,7 @@ test("an isolated fixture can install Core and all five official Adapters", asyn
       "npm", [
         "install",
         registryVersion ? "--prefer-online" : "--prefer-offline",
+        ...(!registryVersion && !process.env.MUHA_RELEASE_DIRECTORY ? ["--ignore-scripts"] : []),
         ...(registryVersion ? ["--save-exact"] : ["--no-package-lock"]),
         ...tarballs,
       ],
@@ -340,7 +343,7 @@ async function verifyAgyInstalledRuntime(consumer, root, isolatedEnvironment) {
   run(process.execPath, ["agy-consumer.mjs"], {
     cwd: consumer,
     env: { ...isolatedEnvironment, HOME: join(root, "native-home"),
-      PATH: `${join(repositoryRoot, "test/fixtures/harness-bin")}:${dirname(process.execPath)}` },
+      PATH: [join(repositoryRoot, "test/fixtures/harness-bin"), dirname(process.execPath)].join(delimiter) },
   });
   await writeFile(join(consumer, "agy-types.ts"), [
     'import { createMuhaRuntime, type HarnessKind } from "@muha-sdk/core";',
@@ -349,7 +352,7 @@ async function verifyAgyInstalledRuntime(consumer, root, isolatedEnvironment) {
     'void createMuhaRuntime({ harnesses: [agyAdapter({ env: { EXAMPLE: undefined } })] });',
     'void harness;',
   ].join("\n"));
-  run(join(repositoryRoot, "node_modules/.bin/tsc"), ["--noEmit", "--strict", "--target", "ES2022",
+  run(process.execPath, [join(repositoryRoot, "node_modules/typescript/bin/tsc"), "--noEmit", "--strict", "--target", "ES2022",
     "--module", "NodeNext", "--moduleResolution", "NodeNext", "agy-types.ts"], { cwd: consumer });
 }
 
@@ -367,7 +370,7 @@ async function verifySelectedPackageContracts(consumer, root, env, directory, pa
     'declare const reference: SessionReference; declare const result: TurnResult;',
     'void reference.route; void result.status;',
   ].join("\n"));
-  run(join(repositoryRoot, "node_modules/.bin/tsc"), ["--noEmit", "--strict", "--target", "ES2022",
+  run(process.execPath, [join(repositoryRoot, "node_modules/typescript/bin/tsc"), "--noEmit", "--strict", "--target", "ES2022",
     "--module", "NodeNext", "--moduleResolution", "NodeNext", "types.ts"], { cwd: consumer, env });
   if (["codex-adapter", "opencode-adapter", "kimi-adapter"].includes(directory)) {
     const harness = directory.replace("-adapter", "");

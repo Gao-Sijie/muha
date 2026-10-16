@@ -1,3 +1,4 @@
+import { spawnNpmSync } from "./npm-command.mjs";
 import { spawnSync } from "node:child_process";
 import { appendFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -24,7 +25,7 @@ try {
 await writeFile(join(npmDirectory, "user.npmrc"), `registry=${registry}\n`, { mode: 0o600 });
 await writeFile(join(npmDirectory, "global.npmrc"), "", { mode: 0o600 });
 const npmEnv = publicationNpmEnvironment(process.env, npmDirectory);
-const cli = spawnSync("npm", ["--version"], { cwd: npmDirectory, env: npmEnv, encoding: "utf8", timeout: 15000 });
+const cli = spawnNpmSync(["--version"], { cwd: npmDirectory, env: npmEnv, encoding: "utf8", timeout: 15000 });
 if (cli.error || cli.status !== 0) throw new Error("Cannot verify the pinned publishing npm CLI");
 assertPublicationNpmVersion(cli.stdout.trim());
 const repository = await fetch("https://api.github.com/repos/Gao-Sijie/muha", {
@@ -35,7 +36,7 @@ if (!repository.ok || (await repository.json()).private !== false) {
 }
 
 function npm(args) {
-  const result = spawnSync("npm", args, {
+  const result = spawnNpmSync(args, {
     cwd: npmDirectory, env: npmEnv, encoding: "utf8", timeout: 180000, maxBuffer: 4 * 1024 * 1024,
   });
   if (result.status !== 0) {

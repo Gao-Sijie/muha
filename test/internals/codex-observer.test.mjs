@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import { createConnection } from "node:net";
 import { delimiter, dirname, resolve } from "node:path";
-import test from "node:test";
+import { linuxTest as test } from "../support/linux-test.mjs";
 import { CodexNativeObserver } from "../../packages/codex-adapter/dist/codex-observer.js";
 
 const environment = { PATH: [resolve(import.meta.dirname, "../fixtures/harness-bin"), dirname(process.execPath)].join(delimiter) };

@@ -6,7 +6,7 @@
  */
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { access, mkdir, mkdtemp, open, realpath, rm, stat } from "node:fs/promises";
+import { access, mkdir, mkdtemp, open, readFile, realpath, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
@@ -54,6 +54,24 @@ export const PINNED_SKILLS: Readonly<Record<Stage, PinnedSkill>> = {
 const factories = { codex: codexAdapter, opencode: openCodeAdapter, kimi: kimiAdapter, pi: piAdapter, agy: agyAdapter };
 const commands = { codex: "codex", opencode: "opencode", kimi: "kimi", agy: "agy" } as const;
 
+async function commandPresent(path: string): Promise<boolean> {
+  try {
+    const info = await stat(path);
+    if (!info.isFile()) return false;
+    if (process.platform !== "win32") { await access(path, constants.X_OK); return true; }
+    if (path.toLowerCase().endsWith(".exe")) return true;
+    if (info.size > 256 * 1024) return false;
+    const source = await readFile(path, "utf8");
+    if (/^#![^\r\n]*\bnode(?:\s|\r?\n|$)/u.test(source)) return true;
+    // Match the literal npm bin entry accepted by the native Windows launcher.
+    const entry = /(?:%dp0%|%~dp0)[\\/]([^"\r\n]+\.(?:m?js|cjs|exe))"/iu.exec(source)?.[1];
+    return entry !== undefined && (await stat(resolve(dirname(path), entry))).isFile();
+  } catch (error) {
+    if (!["ENOENT", "ENOTDIR", "EACCES", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+    return false;
+  }
+}
+
 /** Presence only: no CLI execution, installation, credential probe or model calls. */
 export async function installedHarnesses(path: string = process.env.PATH ?? "/usr/bin:/bin"): Promise<HarnessKind[]> {
   const kinds = Object.keys(factories) as HarnessKind[];
@@ -61,14 +79,8 @@ export async function installedHarnesses(path: string = process.env.PATH ?? "/us
     // Complete Muha installation supplies the Pi SDK as a production dependency.
     if (kind === "pi") return true;
     for (const directory of path.split(delimiter)) {
-      const executable = resolve(directory || ".", commands[kind]);
-      try {
-        if (!(await stat(executable)).isFile()) continue;
-        await access(executable, constants.X_OK);
-        return true;
-      } catch (error) {
-        if (!["ENOENT", "ENOTDIR", "EACCES", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
-      }
+      const names = process.platform === "win32" ? [commands[kind] + ".exe", commands[kind], commands[kind] + ".cmd"] : [commands[kind]];
+      for (const name of names) if (await commandPresent(resolve(directory || ".", name))) return true;
     }
     return false;
   }));

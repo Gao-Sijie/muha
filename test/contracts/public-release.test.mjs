@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
@@ -83,7 +84,7 @@ test("public registry metadata never makes the root workspace publishable", asyn
 
 
 test("publication entry rejects local execution before reading credentials or contacting npm", () => {
-  const result = spawnSync(process.execPath, [new URL("../../scripts/publish-public-release.mjs", import.meta.url).pathname, "publish"], {
+  const result = spawnSync(process.execPath, [fileURLToPath(new URL("../../scripts/publish-public-release.mjs", import.meta.url)), "publish"], {
     encoding: "utf8", env: { PATH: process.env.PATH, GITHUB_ACTIONS: "false" },
   });
   assert.notEqual(result.status, 0);

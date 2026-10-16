@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import test from "node:test";
+import { processSnapshot, assertProcessGone } from "../support/host-process.mjs";
 import { agyAdapter } from "@muha-sdk/agy-adapter";
 import { createMuhaRuntime } from "@muha-sdk/core";
 
@@ -28,9 +29,8 @@ test("AGY cleanup failure closes Runtime, settles its Turn, and aggregates a Har
     const session = await runtime.createSession({ harness: "agy", workspacePath, approvalPolicy: "harnessManaged" });
     const turn = await session.startTurn([{ type: "text", text: "Wait without tools." }]);
     const cliPid = Number(await readFile(join(workspacePath, `${session.reference.sessionId}.pid`), "utf8"));
-    const status = await readFile(`/proc/${cliPid}/status`, "utf8");
-    const helperPid = Number(/^PPid:\s+(\d+)/mu.exec(status)[1]);
-    process.kill(helperPid, "SIGSTOP");
+    const helperPid = (await processSnapshot(cliPid)).parentPid;
+    process.kill(helperPid, process.platform === "win32" ? "SIGKILL" : "SIGSTOP");
     await assert.rejects(turn.interrupt(), error => error.data?.code === "RUNTIME_CLOSED");
     const result = await Promise.race([turn.result, new Promise((_, reject) => {
       guard = setTimeout(() => reject(new Error("cleanup failure left Turn pending")), 2_000);
@@ -99,13 +99,18 @@ test("AGY interruption stops detached work and the same Session handle can conti
     await (await session.startTurn([{ type: "text", text: "Read workspace." }])).result;
     const turn = await session.startTurn([{ type: "text", text: "Keep working until interrupted." }]);
     const heartbeat = join(workspacePath, "heartbeat.txt");
-    const deadline = Date.now() + 2_000;
+    const deadline = Date.now() + (process.platform === "win32" ? 5_000 : 2_000);
     while (!(await readFile(heartbeat, "utf8").catch(() => ""))) {
+      const spawnError = await readFile(join(workspacePath, "heartbeat-error.txt"), "utf8").catch(() => "");
+      const exitCode = await readFile(join(workspacePath, "heartbeat-exit.txt"), "utf8").catch(() => "");
+      assert.equal(spawnError, "", "native fixture failed to spawn");
+      assert.equal(exitCode, "", "native fixture exited before its heartbeat");
       assert.ok(Date.now() < deadline, "native detached work must start");
       await new Promise(resolve => setTimeout(resolve, 10));
     }
     await turn.interrupt();
     assert.equal((await turn.result).status, "interrupted");
+    if (process.platform === "win32") await assertProcessGone(Number(await readFile(join(workspacePath, "heartbeat.pid"), "utf8")));
     const stopped = await readFile(heartbeat, "utf8");
     await new Promise(resolve => setTimeout(resolve, 80));
     assert.equal(await readFile(heartbeat, "utf8"), stopped);

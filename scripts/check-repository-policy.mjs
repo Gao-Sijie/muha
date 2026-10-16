@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export function verifyRepositoryDocs(root, revision) {
   const args = revision === undefined
@@ -13,7 +13,7 @@ export function verifyRepositoryDocs(root, revision) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const [root = new URL('../', import.meta.url).pathname, revision] = process.argv.slice(2);
+  const [root = fileURLToPath(new URL('../', import.meta.url)), revision] = process.argv.slice(2);
   verifyRepositoryDocs(resolve(root), revision);
   process.stdout.write(`Verified ${revision === undefined ? 'Git index' : `commit ${revision}`} contains no docs paths\n`);
 }

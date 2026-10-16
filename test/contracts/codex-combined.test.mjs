@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
-import test from "node:test";
+import { linuxTest as test } from "../support/linux-test.mjs";
 import { DatabaseSync } from "node:sqlite";
 import { createMuhaRuntime } from "@muha-sdk/core";
 import { codexAdapter } from "@muha-sdk/codex-adapter";

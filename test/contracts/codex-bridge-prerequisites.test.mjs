@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { access, chmod, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
-import test from "node:test";
+import { linuxTest as test } from "../support/linux-test.mjs";
 import { createMuhaRuntime } from "@muha-sdk/core";
 import { codexAdapter } from "@muha-sdk/codex-adapter";
 import { createOfficialHarnessRegistration, readOfficialHarnessRegistration } from "../../packages/core/dist/internal.js";

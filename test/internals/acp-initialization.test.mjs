@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -13,7 +14,7 @@ test("closing a combined Driver during port reservation prevents later endpoint 
     startupTimeoutMs: 1000, shutdownTimeoutMs: 500,
     env: { MUHA_FAKE_ACP_SCENARIO: "slow-initialize", MUHA_FAKE_ACP_INITIALIZING_FILE: pidsFile },
   }, { async recordNativeEvent() {}, reportFatalError() {} }, {
-    command: process.execPath, prefix: [new URL("../fixtures/acp-harness/acp-agent.mjs", import.meta.url).pathname],
+    command: process.execPath, prefix: [fileURLToPath(new URL("../fixtures/acp-harness/acp-agent.mjs", import.meta.url))],
   });
   const pending = adapter.initialize();
   const outcome = pending.then(() => ({ initialized: true }), error => ({ error }));

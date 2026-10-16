@@ -1,3 +1,5 @@
+import { spawnNpmSync } from "../../scripts/npm-command.mjs";
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -115,7 +117,7 @@ test("the actual npm CLI reads only the owned credential-free user/global config
       ["globalconfig", join(directory, "global.npmrc")],
       ["registry", "https://registry.npmjs.org/"],
     ]) {
-      const result = spawnSync("npm", ["config", "get", key], { cwd: directory, env, encoding: "utf8", timeout: 15000 });
+      const result = spawnNpmSync(["config", "get", key], { cwd: directory, env, encoding: "utf8", timeout: 15000 });
       assert.equal(result.status, 0, "read-only npm config command must succeed");
       assert.equal(result.stdout.trim(), expected);
     }
@@ -126,7 +128,7 @@ test("both publisher entry modes fail on missing OIDC before loading artifacts o
   for (const mode of ["publish", "promote"]) {
     const env = { ...environment(mode), PATH: process.env.PATH,
       ACTIONS_ID_TOKEN_REQUEST_URL: "invalid-controlled-secret", ACTIONS_ID_TOKEN_REQUEST_TOKEN: "" };
-    const result = spawnSync(process.execPath, [new URL("../../scripts/publish-public-release.mjs", import.meta.url).pathname, mode], {
+    const result = spawnSync(process.execPath, [fileURLToPath(new URL("../../scripts/publish-public-release.mjs", import.meta.url)), mode], {
       env, encoding: "utf8", timeout: 15000,
     });
     assert.notEqual(result.status, 0);

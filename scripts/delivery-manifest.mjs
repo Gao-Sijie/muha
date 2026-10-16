@@ -1,3 +1,8 @@
+// Local diagnostics describe the host build. A multi-platform publication
+// candidate remains subject to separate platform assembly and qualification.
+const supervisorFiles = name => process.platform === "win32"
+  ? [`dist/${name}.exe`, "dist/windows-supervisor.c", "dist/windows-private.c", "dist/windows-private.h"]
+  : [`dist/${name}`, `dist/${name}.c`, `dist/${name}-glibc-compat.c`];
 export const MUHA_DELIVERY_PACKAGES = Object.freeze([
   Object.freeze({
     role: "core",
@@ -7,8 +12,9 @@ export const MUHA_DELIVERY_PACKAGES = Object.freeze([
     requiredFiles: Object.freeze([
       "dist/index.js",
       "dist/internal.js",
+      "dist/host-process.js", "dist/host-process.d.ts",
       "dist/workspace-mcp-worker.js",
-      "dist/acp-supervisor", "dist/acp-supervisor.c", "dist/acp-supervisor-glibc-compat.c",
+      ...supervisorFiles("acp-supervisor"),
     ]),
     forbiddenFilePrefixes: Object.freeze(["dist/kimi-mcp."]),
   }),
@@ -47,7 +53,7 @@ export const MUHA_DELIVERY_PACKAGES = Object.freeze([
     artifactStem: "muha-sdk-pi-adapter",
     requiredFiles: Object.freeze([
       "dist/index.js", "dist/pi-process.js", "dist/pi-owned-worker.js", "dist/pi-events.js", "dist/pi-input.js",
-      "dist/sdk-worker.mjs", "dist/sdk-loader.mjs", "dist/sdk-sessions.mjs", "dist/sdk-settings.mjs",
+      "dist/sdk-worker.mjs", "dist/sdk-worker-transport.mjs", "dist/sdk-loader.mjs", "dist/sdk-sessions.mjs", "dist/sdk-settings.mjs",
       "dist/sdk-extensions.mjs", "dist/ordered-agent-session.mjs", "dist/sdk-patch.json", "dist/PI-SDK-LICENSE",
       "dist/third-party-licenses/aws-sdk-3.972.39.LICENSE",
       "dist/third-party-licenses/data-uri-to-buffer-4.0.1.README.md",
@@ -61,7 +67,7 @@ export const MUHA_DELIVERY_PACKAGES = Object.freeze([
     packageName: "@muha-sdk/agy-adapter",
     directory: "agy-adapter",
     artifactStem: "muha-sdk-agy-adapter",
-    requiredFiles: Object.freeze(["dist/index.js", "dist/agy-supervisor", "dist/agy-supervisor.c", "dist/agy-supervisor-glibc-compat.c"]),
+    requiredFiles: Object.freeze(["dist/index.js", ...supervisorFiles("agy-supervisor")]),
   }),
   Object.freeze({
     role: "umbrella",

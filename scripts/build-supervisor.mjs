@@ -2,11 +2,13 @@ import { execFileSync } from "node:child_process";
 import { copyFileSync, mkdirSync, mkdtempSync, renameSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildWindowsSupervisor } from "./build-windows-supervisor.mjs";
 
 // One reviewed source, independently shipped in each owning package. Core
 // never loads a Harness package, and tarball consumers need no C compiler.
 const sourceRoot = fileURLToPath(new URL("../packages/core/native/", import.meta.url));
 export function buildSupervisor(packageRoot, name) {
+  if (process.platform === "win32") return buildWindowsSupervisor(packageRoot, name);
   if (process.platform !== "linux" || process.arch !== "x64") throw new Error("Build the supervisor on its supported Linux x64 target");
   mkdirSync(resolve(packageRoot, "dist"), { recursive: true });
   // Never expose the linker's incomplete/non-executable output to consumers.
