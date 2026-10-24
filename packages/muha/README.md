@@ -112,3 +112,27 @@ compiling Muha from source is not a required setup step.
 See [CONTRIBUTING.md](https://github.com/Gao-Sijie/muha/blob/main/CONTRIBUTING.md) for development and tests.
 Report problems in [GitHub Issues](https://github.com/Gao-Sijie/muha/issues).
 Security reports: [SECURITY.md](https://github.com/Gao-Sijie/muha/blob/main/SECURITY.md). Licensed under [MIT](https://github.com/Gao-Sijie/muha/blob/main/LICENSE).
+
+## Available models
+
+```js
+const models = await runtime.listModels({ harness: "codex", workspacePath: process.cwd() });
+// Use the same call with opencode, kimi, pi, or agy when enabled.
+console.log(models.map(model => ({ id: model.id, name: model.name })));
+```
+
+`listModels` reads the enabled Harness's native selectable chat-model catalog.
+It requires an existing Workspace and does not create a Session, run inference,
+or change model defaults. The result is a deeply frozen, JSON-safe array; each
+native `id` can be passed unchanged to that Harness's model selection APIs.
+Optional `name`, `description`, `supportedEfforts`, and `defaultEffort` appear only
+when reported natively. Effort values retain their Harness-specific meaning.
+A successful empty catalog returns `[]`; query and format failures reject.
+Catalogs reflect native configuration/authentication and native caching, and do
+not guarantee credentials, quota, or the success of a later model request.
+The static declaration is `runtime.getHarnessCapabilities(harness).model.listing`.
+
+For Codex, OpenCode, Kimi, and Pi, use `await session.setModel(id)` between Turns
+to retain the same conversation with a different model. This clears the previous
+explicit effort selection; the Harness may apply its native default. AGY model
+selection remains limited to create/resume; its idle setter is unsupported.

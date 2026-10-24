@@ -12,6 +12,8 @@ import {
   type OfficialAdapterOptions,
   type SessionReference,
   type TurnResult,
+  type HarnessModelInfo,
+  type ListModelsOptions,
 } from "@muha-sdk/muha";
 
 const options: OfficialAdapterOptions = { env: { EXAMPLE: undefined } };
@@ -23,6 +25,10 @@ declare const result: TurnResult;
 void parseSessionReference(reference);
 void result.status;
 void MuhaError;
+declare const runtime: MuhaRuntime;
+const catalogOptions: ListModelsOptions = { harness: "pi", workspacePath: "/tmp" };
+const catalog: Promise<readonly HarnessModelInfo[]> = runtime.listModels(catalogOptions);
+void catalog;
 
 // @ts-expect-error The entry package does not expose the private Adapter protocol.
 import { createOfficialHarnessRegistration } from "@muha-sdk/muha";

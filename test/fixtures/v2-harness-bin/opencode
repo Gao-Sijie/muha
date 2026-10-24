@@ -148,6 +148,10 @@ const server = createServer(async (request, response) => {
       cursor: {},
     });
   } else if (request.method === "GET" && url.pathname === "/api/model") {
+    if (process.env.MUHA_FAKE_MODEL_CATALOG) {
+      const catalog = JSON.parse(await readFile(process.env.MUHA_FAKE_MODEL_CATALOG, "utf8"));
+      return json(response, catalog.error ? 500 : 200, { data: catalog.models });
+    }
     const directory = url.searchParams.get("location[directory]") ?? "";
     json(response, 200, {
       location: { directory },

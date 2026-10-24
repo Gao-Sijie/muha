@@ -198,6 +198,7 @@ test("every remaining Harness acknowledgement boundary uses the same fake hour w
   for (const operation of [
     "resumeSession",
     "listSessions",
+    "listModels",
     "setModel",
     "startTurn",
     "interruptTurn",
@@ -326,6 +327,8 @@ async function assertOperationTimesOut(operation) {
       });
     } else if (operation === "listSessions") {
       command = runtime.listSessions({ harness: "codex", workspacePath: workspace });
+    } else if (operation === "listModels") {
+      command = runtime.listModels({ harness: "codex", workspacePath: workspace });
     } else {
       const session = await runtime.createSession({ harness: "codex", workspacePath: workspace });
       if (operation === "setModel") {
@@ -386,6 +389,10 @@ function hangingRegistration(hangingOperation) {
     },
     async listSessions() {
       if (hangingOperation === "listSessions") return new Promise(() => undefined);
+      return [];
+    },
+    async listModels() {
+      if (hangingOperation === "listModels") return new Promise(() => undefined);
       return [];
     },
     async close() {},

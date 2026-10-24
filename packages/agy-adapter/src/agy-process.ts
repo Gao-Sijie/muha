@@ -1,7 +1,8 @@
 import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { HarnessErrorData, OfficialAdapterOptions } from "@muha-sdk/core";
+import type { HarnessModelInfo, HarnessErrorData, OfficialAdapterOptions } from "@muha-sdk/core";
+import { OwnedModelQuery, parseModelCatalog } from "./model-query.js";
 import type { AdapterCreateSessionOptions, AdapterResumeSessionOptions, AdapterSession, AdapterTurn,
   AdapterTurnEvent, AdapterTurnInput, LiveHarnessAdapter, LiveHarnessAdapterContext } from "@muha-sdk/core/internal";
 import { OwnedCli } from "./owned-cli.js";
@@ -13,6 +14,7 @@ export class AgyProcess implements LiveHarnessAdapter {
   readonly kind = "agy" as const;
   readonly route = "native" as const;
   readonly #sessions = new Set<AgySession>();
+  readonly #modelQueries = new Set<OwnedModelQuery>();
   readonly #env: NodeJS.ProcessEnv;
   #initialized = false;
   #closing: Promise<void> | undefined;
@@ -45,6 +47,17 @@ export class AgyProcess implements LiveHarnessAdapter {
     catch (error) { await session.close(); throw error; }
   }
   async listSessions(): Promise<never> { throw failure("listSessions", "AGY listing is unsupported"); }
+  async listModels(workspacePath: string): Promise<readonly HarnessModelInfo[]> {
+    if (this.closing) throw failure("listModels", "AGY Adapter is closing");
+    const query = new OwnedModelQuery(workspacePath, this.#env, this.options.startupTimeoutMs ?? 60_000,
+      this.options.shutdownTimeoutMs ?? 60_000, this.context);
+    this.#modelQueries.add(query);
+    try {
+      const models = parseModelCatalog(await query.result);
+      await this.context.recordNativeEvent("agy", { source: "agy.models", models });
+      return models;
+    } finally { await query.close(); this.#modelQueries.delete(query); }
+  }
   lost(session: AgySession, error: HarnessErrorData): void {
     session.fail(error);
     if (this.#initialized && !this.#closing) this.context.reportFatalError(error, [session]);
@@ -52,7 +65,10 @@ export class AgyProcess implements LiveHarnessAdapter {
   release(session: AgySession): void { this.#sessions.delete(session); }
   close(): Promise<void> {
     return this.#closing ??= (async () => {
-      const results = await Promise.allSettled([...this.#sessions].map(session => session.close()));
+      const results = await Promise.allSettled([
+        ...[...this.#sessions].map(session => session.close()),
+        ...[...this.#modelQueries].map(query => query.close()),
+      ]);
       const failed = results.find(result => result.status === "rejected");
       if (failed?.status === "rejected") throw {
         ...failed.reason, code: "HARNESS_ERROR", harness: "agy", operation: "closeHarness", retryable: false,

@@ -2391,6 +2391,7 @@ const harnessErrorOperations = new Set<HarnessErrorData["operation"]>([
   "createSession",
   "resumeSession",
   "listSessions",
+  "listModels",
   "setModel",
   "setEffort",
   "startTurn",

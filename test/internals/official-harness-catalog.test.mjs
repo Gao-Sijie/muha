@@ -111,6 +111,7 @@ test("official Registration rejects mutable Capability input and retains a froze
   assert.equal(Object.isFrozen(capabilities.effort.selectionAt), true);
 
   const invalidProfiles = [
+    { ...FULL_HARNESS_CAPABILITIES, model: { ...FULL_HARNESS_CAPABILITIES.model, listing: undefined } },
     { ...FULL_HARNESS_CAPABILITIES, sessionListing: undefined },
     { ...FULL_HARNESS_CAPABILITIES, unexpected: true },
     { ...FULL_HARNESS_CAPABILITIES, approvalPolicies: ["interactive", "interactive"] },

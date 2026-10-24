@@ -125,3 +125,15 @@ Owned SDK processes run under the Linux subreaper shipped by the exact Core
 dependency. Session and Runtime closure reclaim native detached Bash processes,
 including children whose PID the SDK has not yet reported. A lost ownership helper
 or cleanup timeout produces an error; it does not prove descendant reclamation.
+
+## Model catalog
+
+```js
+const models = await runtime.listModels({ harness: "pi", workspacePath: process.cwd() });
+```
+
+The Adapter queries SDK `ModelRuntime.getAvailable()` in a temporary owned worker, without creating an AgentSession or calling a provider for inference. IDs are `provider/id`. Native availability/configuration errors reject instead of returning a partial catalog.
+
+The result reports native selectable chat models, not a guarantee of credentials,
+quota, or inference success. Query failures reject; a successful empty catalog
+returns `[]`. No Session or inference is created by this query.

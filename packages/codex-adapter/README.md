@@ -28,3 +28,15 @@ load its selected policy: resuming an already loaded native thread can ignore
 overrides. The returned policy/sandbox is still checked, so unsupported or
 unapplied mappings fail instead of silently retaining YOLO. This does not
 archive, delete, or rewrite the native conversation.
+
+## Model catalog
+
+```js
+const models = await runtime.listModels({ harness: "codex", workspacePath: process.cwd() });
+```
+
+The Adapter reads every page of the native `model/list` catalog, including hidden entries, and preserves native model and effort identifiers.
+
+The result reports native selectable chat models, not a guarantee of credentials,
+quota, or inference success. Query failures reject; a successful empty catalog
+returns `[]`. No Session or inference is created by this query.

@@ -1,5 +1,29 @@
 # SDK qualification and migration provenance
 
+## Native model catalog development candidate (2026-10-24)
+
+This candidate adds Session-free `runtime.listModels({ harness, workspacePath })`
+to Core and all five official Adapters. Model selection behavior is unchanged:
+Codex, OpenCode, Kimi and Pi retain idle `setModel`; AGY still supports selection
+only at create/resume. The catalog reports native selectable chat models, not a
+successful inference or quota guarantee.
+
+Affected units include Core's catalog boundary, static Profile and command
+supervision; Codex/Kimi catalog readers shared with existing validation;
+OpenCode's V2 catalog projection; Pi's temporary SDK availability worker;
+and AGY's bounded catalog parser and owned finite CLI query. The runtime
+resource manifest pins 71 resources and preserves every historical receipt.
+New per-unit entries on both Linux and Windows remain PENDING with zero real
+attempts. They prevent publication from inheriting an older source's PASS.
+
+Only controlled CLI/loopback-provider tests, typechecking and repository checks
+are authorized here. Real inference, Windows runtime acceptance, publication
+and consumer-application validation require their existing separate decisions.
+The proposed bounded real regression scope is model-list/selection agreement,
+affected model/effort validation, ordinary failure recovery, and temporary
+query/worker reclamation, with explicit source, platform and budget approval.
+Historical qualifications below retain their actual source and platform scopes.
+
 ## Windows qualification closure (2026-10-22)
 
 AGY and the independent shared-Core Windows platform gate now pass on source

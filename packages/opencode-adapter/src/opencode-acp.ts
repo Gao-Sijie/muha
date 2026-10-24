@@ -119,6 +119,16 @@ export class OpenCodeAcpProcess implements LiveHarnessAdapter {
     await reader.close();
     return this.#requireDriver().resumeSession(options);
   }
+  async listModels(workspacePath: string) {
+    this.#requireDriver();
+    if (!this.#nativeRoute) {
+      this.#nativeRoute = new OpenCodeProcess(this.options, this.context);
+      this.#nativeRouteReady = this.#nativeRoute.initialize();
+    }
+    await this.#nativeRouteReady;
+    this.#requireDriver();
+    return this.#nativeRoute.listModels(workspacePath);
+  }
   listSessions(workspacePath: string) { return this.#requireDriver().listSessions(workspacePath); }
 
   close(): Promise<void> {

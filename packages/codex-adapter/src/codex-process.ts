@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { createInterface, type Interface } from "node:readline";
 import { setTimeout as delay } from "node:timers/promises";
 
-import type { HarnessErrorData, OfficialAdapterOptions } from "@muha-sdk/core";
+import type { HarnessModelInfo, HarnessErrorData, OfficialAdapterOptions } from "@muha-sdk/core";
 import { spawnHarnessProcess, closeHarnessProcess, harnessEnvironment, harnessProcessExitCode } from "@muha-sdk/core/internal/host-process";
 import type {
   AdapterCreateSessionOptions,
@@ -17,6 +17,8 @@ import type {
   LiveHarnessAdapter,
   LiveHarnessAdapterContext,
 } from "@muha-sdk/core/internal";
+
+import { snapshotHarnessModels } from "@muha-sdk/core/internal";
 
 const defaultTimeoutMs = 60_000;
 const questionFeatureCheckTimeoutMs = 5_000;
@@ -326,25 +328,46 @@ export class CodexProcess implements LiveHarnessAdapter {
     return sessions;
   }
 
-  async validateModel(model: string): Promise<void> {
+  async *#modelPages(operation: HarnessErrorData["operation"]): AsyncGenerator<readonly unknown[]> {
     const cursors = new Set<string>();
     let cursor: string | undefined;
     do {
-      const result = asObject(
-        await this.#request(
-          "model/list",
-          { includeHidden: true, ...(cursor === undefined ? {} : { cursor }) },
-          "setModel",
-        ),
-        "model/list result",
-      );
-      if (!Array.isArray(result.data)) throw protocolFailure("Codex model/list data is invalid");
-      if (result.data.some((value) => isObject(value) && value.id === model)) return;
+      const result = await this.#request("model/list",
+        { includeHidden: true, ...(cursor === undefined ? {} : { cursor }) }, operation);
+      if (!isObject(result) || !Array.isArray(result.data)) throw protocolFailure("Codex model/list data is invalid");
+      yield result.data;
       if (result.nextCursor === null || result.nextCursor === undefined) break;
-      cursor = requireString(result.nextCursor, "model/list cursor");
+      if (typeof result.nextCursor !== "string" || result.nextCursor.length === 0) throw protocolFailure("Codex model/list cursor is invalid");
+      cursor = result.nextCursor;
       if (cursors.has(cursor)) throw protocolFailure("Codex repeated a model/list cursor");
       cursors.add(cursor);
     } while (true);
+  }
+
+  async listModels(): Promise<readonly HarnessModelInfo[]> {
+    const models = [];
+    for await (const entries of this.#modelPages("listModels")) {
+      for (const value of entries) {
+        if (!isObject(value) || typeof value.id !== "string" || value.id.length === 0) throw protocolFailure("Codex Model identifier is invalid");
+        const entry = value;
+        const id = value.id;
+        // The existing selection path accepts the catalog id. Never substitute a different wire model.
+        if (entry.model !== undefined && entry.model !== id) throw protocolFailure("Codex Model identifiers disagree");
+        if (entry.supportedReasoningEfforts != null && !Array.isArray(entry.supportedReasoningEfforts)) {
+          throw protocolFailure("Codex Model efforts are invalid");
+        }
+        models.push({ id, name: entry.displayName ?? undefined, description: entry.description ?? undefined,
+          supportedEfforts: (entry.supportedReasoningEfforts as unknown[] | undefined)?.map(value =>
+            isObject(value) ? value.reasoningEffort : value), defaultEffort: entry.defaultReasoningEffort ?? undefined });
+      }
+    }
+    return snapshotHarnessModels("codex", models);
+  }
+
+  async validateModel(model: string): Promise<void> {
+    for await (const entries of this.#modelPages("setModel")) {
+      if (entries.some(value => isObject(value) && value.id === model)) return;
+    }
     throw {
       code: "HARNESS_ERROR",
       message: `Codex does not expose model: ${model}`,
@@ -370,19 +393,8 @@ export class CodexProcess implements LiveHarnessAdapter {
         nativeCode: "model_unresolved",
       } satisfies HarnessErrorData;
     }
-    const cursors = new Set<string>();
-    let cursor: string | undefined;
-    do {
-      const result = asObject(
-        await this.#request(
-          "model/list",
-          { includeHidden: true, ...(cursor === undefined ? {} : { cursor }) },
-          operation,
-        ),
-        "model/list result",
-      );
-      if (!Array.isArray(result.data)) throw protocolFailure("Codex model/list data is invalid");
-      const entry = result.data.find((value) => isObject(value) && value.id === model);
+    for await (const entries of this.#modelPages(operation)) {
+      const entry = entries.find(value => isObject(value) && value.id === model);
       if (entry !== undefined) {
         const supported = isObject(entry) ? entry.supportedReasoningEfforts : undefined;
         const supportedValues = Array.isArray(supported)
@@ -399,11 +411,7 @@ export class CodexProcess implements LiveHarnessAdapter {
           nativeCode: "effort_not_supported",
         } satisfies HarnessErrorData;
       }
-      if (result.nextCursor === null || result.nextCursor === undefined) break;
-      cursor = requireString(result.nextCursor, "model/list cursor");
-      if (cursors.has(cursor)) throw protocolFailure("Codex repeated a model/list cursor");
-      cursors.add(cursor);
-    } while (true);
+    }
     throw {
       code: "HARNESS_ERROR",
       message: `Codex does not expose model: ${model}`,

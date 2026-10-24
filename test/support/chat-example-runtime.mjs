@@ -15,7 +15,7 @@ export function fakeChatRuntime() {
         sessionListing: !agy, imageInput: !agy,
         approvalPolicies: agy || pi ? ['harnessManaged', 'autoApprove'] : ['interactive', 'autoDeny', 'autoApprove', 'harnessManaged'],
         turnQuestions: !agy && !pi, workspaceSkills: true, workspaceMcp: !agy && !pi,
-        model: { selectionAt: agy ? ['createSession', 'resumeSession'] : ['createSession', 'resumeSession', 'idleSession'], observation: 'selectedOnly' },
+        model: { listing: true, selectionAt: agy ? ['createSession', 'resumeSession'] : ['createSession', 'resumeSession', 'idleSession'], observation: 'selectedOnly' },
         effort: { selectionAt: agy ? ['createSession', 'resumeSession'] : ['createSession', 'resumeSession', 'idleSession'], observation: 'selectedOnly', requiresKnownModel: pi },
         assistantMessageStreaming: true, assistantReasoningStreaming: !agy, toolEvents: true, turnUsage: true,
       };

@@ -12,10 +12,12 @@ import { MUHA_DELIVERY_PACKAGES } from "../../scripts/delivery-manifest.mjs";
 import { controlledPi } from "../../packages/pi-adapter/test/support/controlled-pi.mjs";
 
 const execute = promisify(execFile);
-const coldInstallTimeoutMs = process.platform === "win32" ? 600000 : 120000;
+export const coldInstallTimeoutMs = process.platform === "win32" ? 600000 : 1200000;
 // A warm npm cache still requires the same Windows file extraction and hooks.
-const reinstallTimeoutMs = process.platform === "win32" ? 600000 : 120000;
-export const umbrellaConsumerTimeoutMs = process.platform === "win32" ? 1500000 : 240000;
+export const reinstallTimeoutMs = process.platform === "win32" ? 600000 : 120000;
+// The enclosing test must cover both install commands plus preparation and verification.
+export const umbrellaConsumerTimeoutMs = coldInstallTimeoutMs + reinstallTimeoutMs +
+  (process.platform === "win32" ? 300000 : 120000);
 async function run(command, args, options) {
   if (command === "npm") [command, args] = npmCommand(args);
   const settings = { timeout: 120000, maxBuffer: 8 * 1024 * 1024, ...options };
@@ -69,8 +71,8 @@ export async function verifyUmbrellaConsumer({ repositoryRoot, registryVersion, 
     await writeFile(join(consumer, "package.json"), JSON.stringify({ private: true, type: "module", allowScripts: reviewedInstallScripts }));
     // Bare `@muha-sdk/muha` is tested before publication. The public job pins the reviewed
     // candidate version because latest is promoted only after both jobs pass.
-    // Windows cold extraction and reviewed native hooks can exceed five minutes
-    // on hosted runners. Keep the cold cache, original hooks and finite bound.
+    // Allow slow cold Registry downloads without warming the cache or skipping hooks.
+    // Windows retains its existing bound; other platforms allow twenty minutes.
     await run("npm", ["install", "--save-exact", registryVersion ? `@muha-sdk/muha@${registryVersion}` : "@muha-sdk/muha"],
       { cwd: consumer, env, timeout: coldInstallTimeoutMs });
     const manifest = JSON.parse(await readFile(join(consumer, "package.json"), "utf8"));

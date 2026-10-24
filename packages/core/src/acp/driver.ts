@@ -5,7 +5,7 @@
 // OpenCode and Codex ACP routes (internal test binding).
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
-import type { AdapterProtocolErrorData, HarnessErrorData } from "../errors.js";
+import { unsupportedCapabilityError, type AdapterProtocolErrorData, type HarnessErrorData } from "../errors.js";
 import type { AcpFailure } from "./connection.js";
 import type {
   AdapterCreateSessionOptions,
@@ -203,6 +203,11 @@ export class AcpSessionDriver implements LiveHarnessAdapter {
     try { await session.configure(result, options.model, options.effort); }
     catch (error) { await session.close().catch(() => {}); throw error; }
     return session.openHandle();
+  }
+
+  async listModels(): Promise<never> {
+    // ACP v1 exposes a Session-bound picker, not a Session-free catalog.
+    throw unsupportedCapabilityError(this.kind, "model.listing", "listModels");
   }
 
   async listSessions(workspacePath: string): Promise<readonly AdapterListedSession[]> {

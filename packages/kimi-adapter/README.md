@@ -14,3 +14,15 @@ application failure rejects create/resume before a prompt is sent. Native
 Session modes may persist after close; direct native resume can inherit them.
 The Question Capability remains declared, and any Question actually emitted
 keeps its independent SDK lifecycle.
+
+## Model catalog
+
+```js
+const models = await runtime.listModels({ harness: "kimi", workspacePath: process.cwd() });
+```
+
+The Adapter reads `/api/v1/models`. IDs are the exact configured aliases, including bare aliases; it does not prepend a provider. Native thinking efforts are returned when present.
+
+The result reports native selectable chat models, not a guarantee of credentials,
+quota, or inference success. Query failures reject; a successful empty catalog
+returns `[]`. No Session or inference is created by this query.

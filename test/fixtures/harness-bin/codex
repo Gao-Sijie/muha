@@ -310,24 +310,31 @@ if (!["app-server --stdio", "app-server --stdio -c thread_unload_delay_secs=0"].
       continue;
     }
     if (request.method === "model/list") {
+      const catalog = process.env.MUHA_FAKE_MODEL_CATALOG
+        ? JSON.parse(await readFile(process.env.MUHA_FAKE_MODEL_CATALOG, "utf8")) : undefined;
+      if (catalog?.error) {
+        process.stdout.write(JSON.stringify({ id: request.id, error: { code: "catalog_failed", message: "catalog failed" } }) + "\n");
+        continue;
+      }
       if (process.env.MUHA_FAKE_MODEL_LIST_DELAY_MS) {
         await new Promise((resolve) =>
           setTimeout(resolve, Number(process.env.MUHA_FAKE_MODEL_LIST_DELAY_MS)),
         );
       }
-      const models = [
+      const models = catalog?.models ?? [
         { id: "fake-default", model: "fake-default", displayName: "fake-default", hidden: false, supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "medium" }], defaultReasoningEffort: "medium" },
         { id: "fake-high", model: "fake-high", displayName: "fake-high", hidden: false, supportedReasoningEfforts: [{ reasoningEffort: "high", description: "high" }], defaultReasoningEffort: "high" },
         { id: "fake-minimal", model: "fake-minimal", displayName: "fake-minimal", hidden: false },
       ];
       const offset = request.params.cursor === undefined ? 0 : Number(request.params.cursor);
-      const entries = models.slice(offset, offset + 1);
+      const entries = Array.isArray(models) ? models.slice(offset, offset + 1) : models;
       process.stdout.write(
         `${JSON.stringify({
           id: request.id,
           result: {
             data: entries,
-            nextCursor: offset + entries.length < models.length ? String(offset + entries.length) : null,
+            nextCursor: catalog?.repeatCursor ? "0" :
+              Array.isArray(models) && offset + entries.length < models.length ? String(offset + entries.length) : null,
           },
         })}\n`,
       );

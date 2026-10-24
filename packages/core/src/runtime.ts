@@ -5,6 +5,7 @@ import { mkdir, realpath, stat } from "node:fs/promises";
 import { isAbsolute, join, normalize } from "node:path";
 
 import { DiagnosticEventStore } from "./event-store.js";
+import { snapshotHarnessModels, type HarnessModelInfo } from "./models.js";
 import { RuntimeCommandSupervisor } from "./control.js";
 import {
   MuhaError,
@@ -90,6 +91,7 @@ export interface MuhaRuntime {
   createSession(options: CreateSessionOptions): Promise<AgentSession>;
   resumeSession(options: ResumeSessionOptions): Promise<AgentSession>;
   listSessions(options: ListSessionsOptions): Promise<readonly ListedSession[]>;
+  listModels(options: ListModelsOptions): Promise<readonly HarnessModelInfo[]>;
   close(): Promise<void>;
 }
 
@@ -174,6 +176,11 @@ export interface ResumeSessionOptions {
 }
 
 export interface ListSessionsOptions {
+  readonly harness: HarnessKind;
+  readonly workspacePath: string;
+}
+
+export interface ListModelsOptions {
   readonly harness: HarnessKind;
   readonly workspacePath: string;
 }
@@ -696,6 +703,29 @@ class Runtime implements MuhaRuntime {
     );
     this.#sessions.add(session);
     return session;
+  }
+
+  async listModels(options: ListModelsOptions): Promise<readonly HarnessModelInfo[]> {
+    this.#assertActive();
+    if (!isPlainObject(options)) invalid("listModels options must be an object");
+    assertKnownKeys(options, ["harness", "workspacePath"]);
+    if (!isHarnessKind(options.harness)) invalid("Unknown Harness Kind");
+    if (typeof options.workspacePath !== "string" || !isAbsolute(options.workspacePath)) invalid("Workspace path must be absolute");
+    const snapshot = { ...options };
+    return this.#commands.runCancellable(async () => {
+      const adapter = this.#requireAdapter(snapshot.harness);
+      if (!this.#registrationsByKind.get(snapshot.harness)!.capabilities.model.listing) {
+        throw unsupportedCapability(snapshot.harness, "model.listing", "listModels");
+      }
+      const { workspacePath } = await prepareConfiguredWorkspace(snapshot.workspacePath, false);
+      this.#assertActive();
+      try {
+        const models = await this.#commands.runControl(snapshot.harness, "listModels", () => adapter.listModels(workspacePath));
+        return snapshotHarnessModels(snapshot.harness, models);
+      } catch (error) {
+        throw normalizeAdapterCommandError(error, snapshot.harness, "listModels");
+      }
+    });
   }
 
   async listSessions(options: ListSessionsOptions): Promise<readonly ListedSession[]> {

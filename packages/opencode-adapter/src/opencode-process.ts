@@ -9,7 +9,8 @@ import { OpenCodeV2Api } from "./opencode-v2-api.js";
 import { OpenCodeV2Turn } from "./opencode-v2-turn.js";
 import { openCodeV2Input } from "./opencode-v2-image-input.js";
 
-import { MuhaError, type HarnessErrorData, type OfficialAdapterOptions } from "@muha-sdk/core";
+import { MuhaError, type HarnessModelInfo, type HarnessErrorData, type OfficialAdapterOptions } from "@muha-sdk/core";
+import { snapshotHarnessModels } from "@muha-sdk/core/internal";
 import type {
   AdapterCreateSessionOptions,
   AdapterListedSession,
@@ -292,6 +293,17 @@ export class OpenCodeProcess implements LiveHarnessAdapter {
       response.action === "answer" ? { answers: response.answers } : undefined,
     );
     if (value !== true) throw protocolFailure("OpenCode Question response is invalid");
+  }
+
+  async listModels(workspacePath: string): Promise<readonly HarnessModelInfo[]> {
+    return snapshotHarnessModels("opencode", (await this.#requireApi().listModels(workspacePath, "listModels")).map(value => {
+      const entry = asObjectProtocol(value, "OpenCode v2 Model");
+      const provider = requireProtocolString(entry.providerID, "OpenCode Model provider");
+      const id = requireProtocolString(entry.id, "OpenCode Model identifier");
+      if (entry.variants != null && !Array.isArray(entry.variants)) throw protocolFailure("OpenCode Model variants are invalid");
+      return { id: provider + "/" + id, name: entry.name ?? undefined, description: entry.description ?? undefined,
+        supportedEfforts: (entry.variants as unknown[] | undefined)?.map(value => asObjectProtocol(value, "OpenCode Model variant").id) };
+    }));
   }
 
   async validateModel(

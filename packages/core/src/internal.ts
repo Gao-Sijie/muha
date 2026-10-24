@@ -314,6 +314,7 @@ export interface LiveHarnessAdapter {
   createSession(options: AdapterCreateSessionOptions): Promise<AdapterSession>;
   resumeSession(options: AdapterResumeSessionOptions): Promise<AdapterSession>;
   listSessions(workspacePath: string): Promise<readonly AdapterListedSession[]>;
+  listModels(workspacePath: string): Promise<readonly import("./models.js").HarnessModelInfo[]>;
   close(): Promise<void>;
 }
 
@@ -435,3 +436,5 @@ export function readOfficialHarnessRegistration(
     Object.isFrozen(candidate.workspaceConfigurator)
   ) ? candidate : undefined;
 }
+
+export { snapshotHarnessModels } from "./models.js";

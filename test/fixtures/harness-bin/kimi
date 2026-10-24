@@ -86,6 +86,11 @@ const server = createServer(async (request, response) => {
       return json(response, 200, envelope({ ok: true }));
     }
     if (request.method === "GET" && url.pathname === "/api/v1/models") {
+      if (process.env.MUHA_FAKE_MODEL_CATALOG) {
+        const catalog = JSON.parse(await readFile(process.env.MUHA_FAKE_MODEL_CATALOG, "utf8"));
+        if (catalog.error) return json(response, 200, { code: 50001, msg: "catalog failed", data: null });
+        return json(response, 200, envelope({ items: catalog.models }));
+      }
       return json(response, 200, envelope({
         items: [
           { provider: "fake", model: "fake-default", max_context_size: 128_000 },

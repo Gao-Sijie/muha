@@ -33,7 +33,7 @@ const profiles = createConformanceProfiles({
     expected: {
       sessionListing: false, imageInput: false, approvalPolicies: ["harnessManaged", "autoApprove"],
       turnQuestions: false, workspaceSkills: true, workspaceMcp: false,
-      model: { selectionAt: ["createSession", "resumeSession"], observation: "selectedOnly" },
+      model: { listing: true, selectionAt: ["createSession", "resumeSession"], observation: "selectedOnly" },
       effort: { selectionAt: ["createSession", "resumeSession"], observation: "selectedOnly", requiresKnownModel: false },
       assistantMessageStreaming: true, assistantReasoningStreaming: false, toolEvents: true, turnUsage: true,
     },
@@ -42,7 +42,7 @@ const profiles = createConformanceProfiles({
     options: () => ({ env: { PATH: controlledPath }, startupTimeoutMs: 30000 }),
     expected: {
       ...commonCapabilities, approvalPolicies: ["autoApprove", "harnessManaged"], turnQuestions: false, workspaceMcp: false,
-      model: { selectionAt: allSelectionPoints, observation: "effective" },
+      model: { listing: true, selectionAt: allSelectionPoints, observation: "effective" },
       effort: { selectionAt: allSelectionPoints, observation: "effective", requiresKnownModel: true },
     },
   },
@@ -50,7 +50,7 @@ const profiles = createConformanceProfiles({
     options: () => ({ env: { PATH: controlledPath } }),
     expected: {
       ...commonCapabilities,
-      model: { selectionAt: allSelectionPoints, observation: "effective" },
+      model: { listing: true, selectionAt: allSelectionPoints, observation: "effective" },
       effort: {
         selectionAt: allSelectionPoints,
         observation: "selectedOnly",
@@ -62,7 +62,7 @@ const profiles = createConformanceProfiles({
     options: () => ({ env: { PATH: [fakeOpenCodeV2Bin, dirname(process.execPath)].join(delimiter) } }),
     expected: {
       ...commonCapabilities,
-      model: { selectionAt: allSelectionPoints, observation: "selectedOnly" },
+      model: { listing: true, selectionAt: allSelectionPoints, observation: "selectedOnly" },
       effort: {
         selectionAt: allSelectionPoints,
         observation: "selectedOnly",
@@ -74,7 +74,7 @@ const profiles = createConformanceProfiles({
     options: () => ({ env: { PATH: controlledPath } }),
     expected: {
       ...commonCapabilities,
-      model: { selectionAt: allSelectionPoints, observation: "selectedOnly" },
+      model: { listing: true, selectionAt: allSelectionPoints, observation: "selectedOnly" },
       effort: {
         selectionAt: allSelectionPoints,
         observation: "selectedOnly",

@@ -23,3 +23,15 @@ and `--question` modes of `scripts/qualify-opencode-v2-native.mjs` call the fixe
 real model and may consume subscription quota. `--question` allows only the
 built-in Question Tool's one-shot permission; its single-select lifecycle
 passed with the fixed model, without qualifying every Form variant or Profile path.
+
+## Model catalog
+
+```js
+const models = await runtime.listModels({ harness: "opencode", workspacePath: process.cwd() });
+```
+
+The Adapter reads the Workspace-scoped V2 `model.list` catalog. IDs encode the native provider/id pair as `provider/id`, preserving any additional slashes. Native variants are returned as optional `supportedEfforts`.
+
+The result reports native selectable chat models, not a guarantee of credentials,
+quota, or inference success. Query failures reject; a successful empty catalog
+returns `[]`. No Session or inference is created by this query.

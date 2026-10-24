@@ -15,6 +15,7 @@ export type CapabilityOperation =
   | "createSession"
   | "resumeSession"
   | "listSessions"
+  | "listModels"
   | "setModel"
   | "setEffort"
   | "startTurn";
@@ -29,6 +30,7 @@ export type HarnessCapabilityPath =
   | "workspaceMcp"
   | `model.selectionAt.${SessionSelectionPoint}`
   | "model.effectiveObservation"
+  | "model.listing"
   | `effort.selectionAt.${SessionSelectionPoint}`
   | "effort.effectiveObservation"
   | "assistantMessageStreaming"
@@ -38,6 +40,8 @@ export type HarnessCapabilityPath =
 
 /** Model selection and observation behavior for one Harness. */
 export interface ModelCapability {
+  /** Supports querying the native selectable model catalog without a Session. */
+  readonly listing: boolean;
   /** Lifecycle points at which the model option or setter is supported. */
   readonly selectionAt: readonly SessionSelectionPoint[];
   /** Whether Session state is merely selected or confirmed effective by the Harness. */
@@ -125,6 +129,7 @@ export function snapshotHarnessCapabilities(value: HarnessCapabilities): Harness
     workspaceSkills: value.workspaceSkills,
     workspaceMcp: value.workspaceMcp,
     model: Object.freeze({
+      listing: value.model.listing,
       selectionAt: Object.freeze([...value.model.selectionAt]),
       observation: value.model.observation,
     }),
@@ -188,7 +193,7 @@ function validateSelectionCapability(
     value,
     name === "effort"
       ? ["selectionAt", "observation", "requiresKnownModel"]
-      : ["selectionAt", "observation"],
+      : ["listing", "selectionAt", "observation"],
     name,
   );
   if (!Array.isArray(value.selectionAt)) throw new TypeError(`${name}.selectionAt must be an array`);
@@ -198,6 +203,9 @@ function validateSelectionCapability(
   }
   if (name === "effort" && typeof value.requiresKnownModel !== "boolean") {
     throw new TypeError("effort.requiresKnownModel must be a boolean");
+  }
+  if (name === "model" && typeof value.listing !== "boolean") {
+    throw new TypeError("model.listing must be a boolean");
   }
 }
 

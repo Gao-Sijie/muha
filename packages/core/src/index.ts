@@ -1,6 +1,7 @@
 declare const harnessRegistrationBrand: unique symbol;
 
 export type { HarnessKind } from "./harness-catalog.js";
+export type { HarnessModelInfo } from "./models.js";
 
 export interface OfficialAdapterOptions {
   /** Overrides for the native Harness process environment only. */
@@ -56,6 +57,7 @@ export {
   type CreateSessionOptions,
   type ResumeSessionOptions,
   type ListSessionsOptions,
+  type ListModelsOptions,
   type McpServerConfig,
   type RuntimeTermination,
   type SkillSource,

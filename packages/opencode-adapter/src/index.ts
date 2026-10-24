@@ -19,6 +19,7 @@ const capabilities = Object.freeze({
   workspaceSkills: true,
   workspaceMcp: true,
   model: Object.freeze({
+    listing: true,
     selectionAt: Object.freeze(["createSession", "resumeSession", "idleSession"] as const),
     observation: "selectedOnly",
   }),

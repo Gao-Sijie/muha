@@ -154,6 +154,7 @@ export interface HarnessErrorData {
     | "createSession"
     | "resumeSession"
     | "listSessions"
+    | "listModels"
     | "setModel"
     | "setEffort"
     | "startTurn"

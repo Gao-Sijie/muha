@@ -110,6 +110,16 @@ export class CodexAcpProcess implements LiveHarnessAdapter {
     if (options.route !== undefined && options.route !== "combined") throw protocol("Unsupported Codex Reference route");
     return this.#requireDriver().resumeSession(options);
   }
+  async listModels(workspacePath: string) {
+    this.#requireDriver();
+    if (!this.#nativeRoute) {
+      this.#nativeRoute = new CodexProcess(this.options, this.context);
+      this.#nativeRouteReady = this.#nativeRoute.initialize();
+    }
+    await this.#nativeRouteReady;
+    this.#requireDriver();
+    return this.#nativeRoute.listModels();
+  }
   listSessions(workspacePath: string) { return this.#requireDriver().listSessions(workspacePath); }
 
   close(): Promise<void> {

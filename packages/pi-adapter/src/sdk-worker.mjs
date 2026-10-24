@@ -46,6 +46,15 @@ transport.onMessage(async message => {
     else if (command === "create") await reply(await create(args));
     else if (command === "resume") await reply(await create(args, true));
     else if (command === "list") await reply(await listedSessions(sdk, args.workspacePath, diagnostic));
+    else if (command === "models") {
+      const runtime = await sdk.ModelRuntime.create();
+      const models = await runtime.getAvailable();
+      // Native availability checks can return a partial snapshot and retain their failure.
+      if (runtime.getError()) throw new Error("Pi Model catalog could not be read completely");
+      const catalog = models.map(model => ({ id: model.provider + "/" + model.id, name: model.name }));
+      await diagnostic("ModelRuntime.getAvailable", catalog);
+      await reply(catalog);
+    }
     else if (command === "setModel") {
       await session.setModel(resolveModel(modelRuntime, args.model));
       if (selection(session).model !== args.model) throw new Error("Pi did not accept the requested model");

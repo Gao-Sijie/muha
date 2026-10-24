@@ -6,6 +6,7 @@ export const FULL_HARNESS_CAPABILITIES = Object.freeze({
   workspaceSkills: true,
   workspaceMcp: true,
   model: Object.freeze({
+    listing: true,
     selectionAt: Object.freeze(["createSession", "resumeSession", "idleSession"]),
     observation: "effective",
   }),

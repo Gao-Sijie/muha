@@ -4,7 +4,8 @@ import { readFile, realpath } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import { createInterface, type Interface } from "node:readline";
 
-import type { HarnessErrorData, OfficialAdapterOptions } from "@muha-sdk/core";
+import type { HarnessModelInfo, HarnessErrorData, OfficialAdapterOptions } from "@muha-sdk/core";
+import { snapshotHarnessModels } from "@muha-sdk/core/internal";
 import { spawnHarnessProcess, closeHarnessProcess, harnessEnvironment } from "@muha-sdk/core/internal/host-process";
 import type {
   AdapterCreateSessionOptions,
@@ -283,16 +284,26 @@ export class KimiProcess implements LiveHarnessAdapter {
     return mode;
   }
 
+  async #modelCatalog(operation: HarnessErrorData["operation"]): Promise<readonly unknown[]> {
+    const data = asObjectProtocol(await this.requestData("GET", "/api/v1/models", operation), "Kimi Model catalog");
+    if (!Array.isArray(data.items)) throw protocolFailure("Kimi Model catalog items must be an array");
+    return data.items;
+  }
+
+  async listModels(): Promise<readonly HarnessModelInfo[]> {
+    return snapshotHarnessModels("kimi", (await this.#modelCatalog("listModels")).map(value => {
+      const entry = asObjectProtocol(value, "Kimi Model");
+      return { id: entry.model, name: entry.display_name ?? undefined, supportedEfforts: entry.support_efforts ?? undefined,
+        defaultEffort: entry.default_effort ?? undefined };
+    }));
+  }
+
   async validateModel(
     model: string,
     operation: HarnessErrorData["operation"],
   ): Promise<string> {
-    const data = asObjectProtocol(
-      await this.requestData("GET", "/api/v1/models", operation),
-      "Kimi Model catalog",
-    );
-    if (!Array.isArray(data.items)) throw protocolFailure("Kimi Model catalog items must be an array");
-    for (const value of data.items) {
+    const items = await this.#modelCatalog(operation);
+    for (const value of items) {
       const item = asObjectProtocol(value, "Kimi Model catalog item");
       if (requireProtocolString(item.model, "Kimi Model identifier") === model) return model;
     }
@@ -307,12 +318,8 @@ export class KimiProcess implements LiveHarnessAdapter {
     if (model === undefined) {
       throw harnessCommandFailure(operation, "Kimi cannot validate Effort without a resolved Model", "model_unresolved");
     }
-    const data = asObjectProtocol(
-      await this.requestData("GET", "/api/v1/models", operation),
-      "Kimi Model catalog",
-    );
-    if (!Array.isArray(data.items)) throw protocolFailure("Kimi Model catalog items must be an array");
-    for (const value of data.items) {
+    const items = await this.#modelCatalog(operation);
+    for (const value of items) {
       const item = asObjectProtocol(value, "Kimi Model catalog item");
       if (requireProtocolString(item.model, "Kimi Model identifier") !== model) continue;
       if (

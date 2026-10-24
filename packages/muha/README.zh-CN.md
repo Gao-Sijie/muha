@@ -108,3 +108,23 @@ npm install @muha-sdk/core @muha-sdk/pi-adapter
 开发和测试步骤见 [CONTRIBUTING.md](https://github.com/Gao-Sijie/muha/blob/main/CONTRIBUTING.md)。问题反馈请使用
 [GitHub Issues](https://github.com/Gao-Sijie/muha/issues)，安全问题请参考
 [SECURITY.md](https://github.com/Gao-Sijie/muha/blob/main/SECURITY.md)。许可证为 [MIT](https://github.com/Gao-Sijie/muha/blob/main/LICENSE)。
+
+## 查询可用模型
+
+```js
+const models = await runtime.listModels({ harness: "codex", workspacePath: process.cwd() });
+// 对已启用的 opencode、kimi、pi、agy 使用相同调用，只替换 harness。
+console.log(models.map(model => ({ id: model.id, name: model.name })));
+```
+
+此接口查询 Harness 原生配置所报告的可选聊天模型。Workspace 必须存在；
+查询不创建聊天会话、不调用模型推理、不修改默认模型。返回值是深度冻结、
+可 JSON 序列化的数组，原生 `id` 可原样传给对应 Harness 的模型选择接口。
+仅在原生目录提供时返回 `name`、`description`、`supportedEfforts` 和
+`defaultEffort`；effort 保留原生含义。成功查询到空目录返回 `[]`，查询和格式
+错误会明确拒绝。目录受原生配置、认证和缓存影响，不保证凭据、额度或下一次
+模型调用成功。静态能力声明为 `runtime.getHarnessCapabilities(harness).model.listing`。
+
+Codex、OpenCode、Kimi 和 Pi 可以在两次 Turn 之间调用
+`await session.setModel(id)`，保留同一会话历史。切换会清除旧的显式 effort，
+原生 Harness 仍可采用其默认值。AGY 目前仅支持在创建和恢复会话时选择模型。

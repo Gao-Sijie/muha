@@ -8,7 +8,7 @@ const capabilities = Object.freeze({
   sessionListing: true, imageInput: true,
   approvalPolicies: Object.freeze(["autoApprove", "harnessManaged"] as const),
   turnQuestions: false, workspaceSkills: true, workspaceMcp: false,
-  model: Object.freeze({ selectionAt: Object.freeze(["createSession", "resumeSession", "idleSession"] as const), observation: "effective" }),
+  model: Object.freeze({ listing: true, selectionAt: Object.freeze(["createSession", "resumeSession", "idleSession"] as const), observation: "effective" }),
   effort: Object.freeze({ selectionAt: Object.freeze(["createSession", "resumeSession", "idleSession"] as const), observation: "effective", requiresKnownModel: true }),
   assistantMessageStreaming: true, assistantReasoningStreaming: true, toolEvents: true, turnUsage: true,
 } satisfies HarnessCapabilities);

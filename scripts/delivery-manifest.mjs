@@ -13,6 +13,7 @@ export const MUHA_DELIVERY_PACKAGES = Object.freeze([
     requiredFiles: Object.freeze([
       "dist/index.js",
       "dist/internal.js",
+      "dist/models.js", "dist/models.d.ts",
       "dist/host-process.js", "dist/host-process.d.ts",
       "dist/workspace-mcp-worker.js",
       ...supervisorFiles("acp-supervisor"),
@@ -68,7 +69,7 @@ export const MUHA_DELIVERY_PACKAGES = Object.freeze([
     packageName: "@muha-sdk/agy-adapter",
     directory: "agy-adapter",
     artifactStem: "muha-sdk-agy-adapter",
-    requiredFiles: Object.freeze(["dist/index.js", ...supervisorFiles("agy-supervisor")]),
+    requiredFiles: Object.freeze(["dist/index.js", "dist/model-query.js", ...supervisorFiles("agy-supervisor")]),
   }),
   Object.freeze({
     role: "umbrella",

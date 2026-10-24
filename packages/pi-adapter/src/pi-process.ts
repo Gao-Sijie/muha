@@ -4,7 +4,8 @@ import { harnessEnvironment } from "@muha-sdk/core/internal/host-process";
 import { randomUUID } from "node:crypto";
 import { PiEvents } from "./pi-events.js";
 import { piInput } from "./pi-input.js";
-import { MuhaError, type HarnessErrorData, type OfficialAdapterOptions } from "@muha-sdk/core";
+import { MuhaError, type HarnessModelInfo, type HarnessErrorData, type OfficialAdapterOptions } from "@muha-sdk/core";
+import { snapshotHarnessModels } from "@muha-sdk/core/internal";
 import type { AdapterCreateSessionOptions, AdapterResumeSessionOptions, AdapterSession,
   AdapterTurn, AdapterTurnEvent, AdapterTurnInput, AdapterListedSession, LiveHarnessAdapter, LiveHarnessAdapterContext } from "@muha-sdk/core/internal";
 
@@ -47,6 +48,11 @@ export class PiProcess implements LiveHarnessAdapter {
   async listSessions(workspacePath: string): Promise<readonly AdapterListedSession[]> {
     const worker = await this.#worker();
     try { return await worker.request("list", { workspacePath }) as AdapterListedSession[]; }
+    finally { await worker.close(); this.#workers.delete(worker); }
+  }
+  async listModels(): Promise<readonly HarnessModelInfo[]> {
+    const worker = await this.#worker();
+    try { return snapshotHarnessModels("pi", await worker.request("models", {})); }
     finally { await worker.close(); this.#workers.delete(worker); }
   }
   async close(): Promise<void> {
@@ -122,7 +128,8 @@ class PiWorker {
     }
     if (message.type === "diagnostic") {
       if (typeof message.source !== "string" || !["SessionManager.list", "createAgentSession.modelFallbackMessage",
-        "createAgentSession.extensionsResult.errors", "AgentSession.bindExtensions.onError"].includes(message.source)) {
+        "createAgentSession.extensionsResult.errors", "AgentSession.bindExtensions.onError",
+        "ModelRuntime.getAvailable"].includes(message.source)) {
         throw new Error("Unknown Pi SDK diagnostic source");
       }
       await this.context.recordNativeEvent("pi", { source: message.source, payload: message.payload });
@@ -158,7 +165,7 @@ class PiWorker {
       if (this.#closing || this.#lostReported || !this.#child.connected) { reject(failure("initialize", "Pi SDK process is unavailable")); return; }
       const id = randomUUID();
       const operation: HarnessErrorData["operation"] = command === "create" ? "createSession"
-        : command === "resume" ? "resumeSession" : command === "list" ? "listSessions"
+        : command === "resume" ? "resumeSession" : command === "list" ? "listSessions" : command === "models" ? "listModels"
         : command === "prompt" ? "startTurn" : command === "setModel" ? "setModel"
         : command === "setEffort" ? "setEffort" : command === "abort" ? "interruptTurn" : "initialize";
       // Only SDK startup uses the Registration startup bound. Once ready,

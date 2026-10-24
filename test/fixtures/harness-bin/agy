@@ -9,6 +9,21 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { nativeStringField } from "../agy-native-metadata.mjs";
 
 const args = process.argv.slice(2);
+if (args[0] === "models") {
+  const catalog = process.env.MUHA_FAKE_MODEL_CATALOG
+    ? JSON.parse(await readFile(process.env.MUHA_FAKE_MODEL_CATALOG, "utf8"))
+    : { models: "fake-opus\tFake Opus\nfake-high\tFake High\n" };
+  if (catalog.pidFile) await writeFile(catalog.pidFile, String(process.pid));
+  if (catalog.detachedPidFile) {
+    const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { detached: true, stdio: "ignore" });
+    child.unref();
+    await writeFile(catalog.detachedPidFile, String(child.pid));
+  }
+  if (catalog.hang) await new Promise(() => setInterval(() => {}, 1000));
+  if (catalog.error) { process.stderr.write("private diagnostic must not become a Model\n"); process.exit(7); }
+  await new Promise(resolve => process.stdout.write(catalog.models, resolve));
+  process.exit(0);
+}
 if (process.env.MUHA_FAKE_AGY_SCENARIO === "slow-startup") {
   await new Promise(resolve => setTimeout(resolve, 2500));
 }

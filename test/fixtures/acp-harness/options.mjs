@@ -13,7 +13,9 @@ import {
 function bindControlledEndpoint(factory, { acp }) {
   const registration = readOfficialHarnessRegistration(factory());
   return createOfficialHarnessRegistration(
-    registration.kind, {}, registration.capabilities, registration.workspaceConfigurator,
+    registration.kind, {}, Object.freeze({ ...registration.capabilities,
+      model: Object.freeze({ ...registration.capabilities.model, listing: false }),
+    }), registration.workspaceConfigurator,
     (_options, context) => new AcpSessionDriver(registration.kind, acp, context, {
       effortConfigId: registration.kind === "codex" ? "reasoning_effort" : "effort",
       classifyError: error => error.operation === "resumeSession" && error.nativeCode === "-32001" && error.message === "session_not_found"

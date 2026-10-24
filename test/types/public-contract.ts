@@ -10,6 +10,8 @@ import type {
   HarnessRegistration,
   McpServerConfig,
   ModelCapability,
+  HarnessModelInfo,
+  ListModelsOptions,
   MuhaErrorData,
   MuhaRuntime,
   SessionSelectionPoint,
@@ -105,6 +107,7 @@ type CapabilityOperationsAreClosed = Assert<Equal<
   | "createSession"
   | "resumeSession"
   | "listSessions"
+  | "listModels"
   | "setModel"
   | "setEffort"
   | "startTurn"
@@ -119,6 +122,7 @@ type CapabilityPathsAreClosed = Assert<Equal<
   | "workspaceMcp"
   | `model.selectionAt.${SessionSelectionPoint}`
   | "model.effectiveObservation"
+  | "model.listing"
   | `effort.selectionAt.${SessionSelectionPoint}`
   | "effort.effectiveObservation"
   | "assistantMessageStreaming"
@@ -153,6 +157,14 @@ void createMuhaRuntime({ harnesses: [registration] });
 void runtime.getHarnessCapabilities("codex");
 void capabilities.approvalPolicies;
 void modelCapability.selectionAt;
+void modelCapability.listing;
+type ModelInfoFieldsAreClosed = Assert<Equal<keyof HarnessModelInfo,
+  "id" | "name" | "description" | "supportedEfforts" | "defaultEffort">>;
+type ModelListOptionsAreClosed = Assert<Equal<keyof ListModelsOptions, "harness" | "workspacePath">>;
+const models: Promise<readonly HarnessModelInfo[]> = runtime.listModels({ harness: "codex", workspacePath: "/tmp" });
+void models;
+// @ts-expect-error Model catalogs use the native context, with no endpoint passthrough.
+void runtime.listModels({ harness: "codex", workspacePath: "/tmp", baseUrl: "https://example.invalid" });
 void effortCapability.requiresKnownModel;
 // @ts-expect-error Runtime has no native option passthrough.
 void createMuhaRuntime({ harnesses: [registration], reasoningEffort: "high" });

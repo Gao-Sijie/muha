@@ -74,3 +74,15 @@ Maintainers build the helper with `npm run build:native` using a C compiler
 and `readelf`. Its startup compatibility source binds the existing x86-64
 glibc ABI; keep the actual glibc 2.28 qualification when changing startup or
 adding C constructors. The helper links the platform libc dynamically.
+
+## Model catalog
+
+```js
+const models = await runtime.listModels({ harness: "agy", workspacePath: process.cwd() });
+```
+
+The Adapter runs the caller-installed `agy models` under its owned process supervisor. It validates the native slug/display-name output (including CLI 1.4.5 tab-separated lines), drains diagnostics privately, and bounds query time and descendant cleanup. Unknown output formats reject; AGY idle model switching remains unsupported.
+
+The result reports native selectable chat models, not a guarantee of credentials,
+quota, or inference success. Query failures reject; a successful empty catalog
+returns `[]`. No Session or inference is created by this query.

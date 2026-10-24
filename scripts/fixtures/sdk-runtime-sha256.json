@@ -9,11 +9,15 @@
     },
     {
       "path": "packages/agy-adapter/src/agy-process.ts",
-      "sha256": "176a2ba5bcf3e687029247c1f8f3ba197417dc471b84be891aeddc67f4ee194e"
+      "sha256": "24c3ea513aad47a1eb417cb45ab71047a2b394f47ad4c51ef8ba6ed62a0290b3"
     },
     {
       "path": "packages/agy-adapter/src/index.ts",
-      "sha256": "33b029cd402b98e6d61276f02ea6424b1867a5fcec4394d241039a103b2db2f3"
+      "sha256": "26fb90eb8638f5fc23ee938c2a9c70b643783fedbe8f30b0335d8cdcf7088033"
+    },
+    {
+      "path": "packages/agy-adapter/src/model-query.ts",
+      "sha256": "c5396bf396f4cab6bc84e966cec6e799444882215c61d8fadf465fd61c11e276"
     },
     {
       "path": "packages/agy-adapter/src/native-metadata.ts",
@@ -37,7 +41,7 @@
     },
     {
       "path": "packages/codex-adapter/src/codex-acp.ts",
-      "sha256": "646ce8f809468fefeaf8b3b9ce81e0f16000fca57660575040f1af8ea2cd7441"
+      "sha256": "e66d2f3920dd742075755d2e3687b38ddd039b4ef63397de2d651633aa235922"
     },
     {
       "path": "packages/codex-adapter/src/codex-bridge.ts",
@@ -57,11 +61,11 @@
     },
     {
       "path": "packages/codex-adapter/src/codex-process.ts",
-      "sha256": "2b6ecdc62f2b13c1553a8ffc0929575a9e00e05c1352f8c90b5888003aee6aca"
+      "sha256": "8f6cf686290c2e0771c2956e9f809f96deb765cf012eba8b51e2ab93e96827d5"
     },
     {
       "path": "packages/codex-adapter/src/index.ts",
-      "sha256": "48e2f1e845df2f75c74e2f61eefae683ec1ec38cc2b6fd7ea9dfcd0865092522"
+      "sha256": "8fb1c4a52fa9d221b36d18f4dba07c111036b751b2fca78e46260dec5ee29611"
     },
     {
       "path": "packages/core/native/glibc-startup-compat.c",
@@ -93,7 +97,7 @@
     },
     {
       "path": "packages/core/src/acp/driver.ts",
-      "sha256": "cbc52af64c4a5243c97954fa24cb4afe524ff95536ab7b91841c6566370edd55"
+      "sha256": "03a589f597ebca2e4d48808792d7d779254eda6840fc64ca18182bff9e651a7d"
     },
     {
       "path": "packages/core/src/acp/input.ts",
@@ -109,7 +113,7 @@
     },
     {
       "path": "packages/core/src/capabilities.ts",
-      "sha256": "96b8107aa9fc19226ed1c5504e8214867cb6162c3b7c63e6a1739ddb7ca93556"
+      "sha256": "bebcd4afb116008f82679292d31449918a8e83e70ca4334f07894ff947221b49"
     },
     {
       "path": "packages/core/src/control.ts",
@@ -117,7 +121,7 @@
     },
     {
       "path": "packages/core/src/errors.ts",
-      "sha256": "a4222d797d30321453e516ed54be5e54bd7798b9f1fc9c30d4e4824d92367c1d"
+      "sha256": "d8c1be7b42a4a2f0e19c7d31e4651d22b6ffe3ba996f79a1e600fad6890f0f34"
     },
     {
       "path": "packages/core/src/event-store.ts",
@@ -133,11 +137,15 @@
     },
     {
       "path": "packages/core/src/index.ts",
-      "sha256": "0a6b148a07049f5e984dc95b8fc7ce2766e31c612fa39a2b5f81b0e0df4908d6"
+      "sha256": "bf8952a9b5433d93de13913c81f7d63ccac2fb9a854927d53c78897732aa7147"
     },
     {
       "path": "packages/core/src/internal.ts",
-      "sha256": "3db4ced4ad3507f3459404ce380d2f19d7d58fcd82b8d8259330b88fc39791af"
+      "sha256": "7d67d9ce5298416bc521c99ce195d9836a48b69f14ddc9ae22da6a4775a737a6"
+    },
+    {
+      "path": "packages/core/src/models.ts",
+      "sha256": "2569990c9ec6f6ab503fb8603b145a1e6c223947a1fa1b326375a5a0af96c9e6"
     },
     {
       "path": "packages/core/src/platform.ts",
@@ -149,7 +157,7 @@
     },
     {
       "path": "packages/core/src/runtime.ts",
-      "sha256": "4c3d4bd67607de87bc7e531014f4e164fac86dc1971222679cdcf2d62fa56926"
+      "sha256": "f16a482faed5febf175956d563670c846204043fe4528dea94ef4576fbf3adb7"
     },
     {
       "path": "packages/core/src/scheduler.ts",
@@ -157,7 +165,7 @@
     },
     {
       "path": "packages/core/src/session.ts",
-      "sha256": "b022a510365162ce19fedc3828f590c8656c7de2efeaf5a920e241986438304b"
+      "sha256": "c72366d466387dec2f761683a2f45b5867ca271080b9c5ea0ad1b0086704ba4a"
     },
     {
       "path": "packages/core/src/workspace-configurator.ts",
@@ -169,11 +177,11 @@
     },
     {
       "path": "packages/kimi-adapter/src/index.ts",
-      "sha256": "1908c70548dd8158ebda9bdd0b0baa7c8f97e95a8d3df2a0b8024c3a35f58e5e"
+      "sha256": "4384630bafa2bca0450936315f1a5e0edff22bfdb8753b501f25f0b150f54c11"
     },
     {
       "path": "packages/kimi-adapter/src/kimi-process.ts",
-      "sha256": "6588e2c883918c52b39be5ece1144370ddded129561ffe70acc148bf5bc38cb2"
+      "sha256": "fc3fe5b4171a7587d79f4fe883a5dc70e3049df1303c751f945cc1def3bcae93"
     },
     {
       "path": "packages/kimi-adapter/src/workspace-configurator.ts",
@@ -185,15 +193,15 @@
     },
     {
       "path": "packages/opencode-adapter/src/index.ts",
-      "sha256": "28952c7f19de5e116eb4a3ef61408e6eb5f78da669cdd9a8786177d409020a34"
+      "sha256": "e5582b6d086ba084b49976226884a2a4eaba36c09fd194ee3ded0f56e88a1e13"
     },
     {
       "path": "packages/opencode-adapter/src/opencode-acp.ts",
-      "sha256": "4ba43200d4eccd34ef4c8222db9991f04398a5e93cbeee2bd939adb87fba6cd2"
+      "sha256": "cf45bfa6bfb54b08771a0821994ba2a61e870ac1f166f4a07ed6e4a1f0a2b8d5"
     },
     {
       "path": "packages/opencode-adapter/src/opencode-process.ts",
-      "sha256": "013ca98b9cfe4e5db8454cd28a430a8e2d70c451212c0b5b12108d15cbdde83c"
+      "sha256": "c129bd2bd4d0b3dd54cddec7520286722f7d7aeef81408312b4b0f4b9f2c12c3"
     },
     {
       "path": "packages/opencode-adapter/src/opencode-v2-api.ts",
@@ -229,7 +237,7 @@
     },
     {
       "path": "packages/pi-adapter/src/index.ts",
-      "sha256": "3b585a1c4a9cd136f9bb8342fdd43738d7a14508b1ec0c661146b2147e1c5d03"
+      "sha256": "7fbc59020bdcdc5edad355ae51af0ae2d8205b08714e9dbffcb685bec20b55e2"
     },
     {
       "path": "packages/pi-adapter/src/pi-events.ts",
@@ -245,7 +253,7 @@
     },
     {
       "path": "packages/pi-adapter/src/pi-process.ts",
-      "sha256": "06439a06bf1eaa98a63dfb4150d87ac6ad8cbc147482b351e93dc221508e973d"
+      "sha256": "b6827855739e628d25befd07a4ebdc33b0e5028fc7022d0f810b95a1e8704a31"
     },
     {
       "path": "packages/pi-adapter/src/sdk-extensions.mjs",
@@ -269,7 +277,7 @@
     },
     {
       "path": "packages/pi-adapter/src/sdk-worker.mjs",
-      "sha256": "61e902cd6fc44a8712ed6f126ea66d8704e078851d97b6a67e2c2dd577bf528c"
+      "sha256": "883b77e6331ef39ac50ed24f63c4fbeff9406b7f0a94f79cddb6f3181e1a7fe0"
     },
     {
       "path": "packages/pi-adapter/third-party-licenses/nodable-entities-2.1.0.LICENSE",
@@ -919,6 +927,372 @@
       "coverage": ["runtime-init-guards-rollback-irreversible-close-aggregation", "workspace-session-reference-history", "turn-sequencing-one-terminal-final-assistant-message", "interruption-close-native-ownership-and-loss", "private-diagnostic-store-provenance-lease-integrity-and-faults", "profile-enforcement-empty-configuration-and-opt-in-retry-ownership"],
       "paidCallsAddedByCoreAudit": 0,
       "scope": "Independent platform closure explicitly maps 130 native Windows controlled contracts and source-equivalent five-Harness real evidence. Not automatic promotion from Adapter status flags, a new five-Harness paid rerun, generic all-model support, formal artifact/Registry acceptance or permission to merge main. Existing accepted reasoning, timeout and supervisor-loss limits remain unchanged."
+    },
+    {
+      "harness": "core",
+      "platform": "linux-x64",
+      "candidateDate": "2026-10-24",
+      "status": "PENDING",
+      "sourceBase": "d1710665836f6d485db9b52ca6a0616e00510096",
+      "feature": "native-model-listing",
+      "changedResources": [
+        {
+          "path": "packages/core/src/acp/driver.ts",
+          "previousSha256": "cbc52af64c4a5243c97954fa24cb4afe524ff95536ab7b91841c6566370edd55",
+          "updatedSha256": "03a589f597ebca2e4d48808792d7d779254eda6840fc64ca18182bff9e651a7d"
+        },
+        {
+          "path": "packages/core/src/capabilities.ts",
+          "previousSha256": "96b8107aa9fc19226ed1c5504e8214867cb6162c3b7c63e6a1739ddb7ca93556",
+          "updatedSha256": "bebcd4afb116008f82679292d31449918a8e83e70ca4334f07894ff947221b49"
+        },
+        {
+          "path": "packages/core/src/errors.ts",
+          "previousSha256": "a4222d797d30321453e516ed54be5e54bd7798b9f1fc9c30d4e4824d92367c1d",
+          "updatedSha256": "d8c1be7b42a4a2f0e19c7d31e4651d22b6ffe3ba996f79a1e600fad6890f0f34"
+        },
+        {
+          "path": "packages/core/src/index.ts",
+          "previousSha256": "0a6b148a07049f5e984dc95b8fc7ce2766e31c612fa39a2b5f81b0e0df4908d6",
+          "updatedSha256": "bf8952a9b5433d93de13913c81f7d63ccac2fb9a854927d53c78897732aa7147"
+        },
+        {
+          "path": "packages/core/src/internal.ts",
+          "previousSha256": "3db4ced4ad3507f3459404ce380d2f19d7d58fcd82b8d8259330b88fc39791af",
+          "updatedSha256": "7d67d9ce5298416bc521c99ce195d9836a48b69f14ddc9ae22da6a4775a737a6"
+        },
+        {
+          "path": "packages/core/src/models.ts",
+          "previousSha256": null,
+          "updatedSha256": "2569990c9ec6f6ab503fb8603b145a1e6c223947a1fa1b326375a5a0af96c9e6"
+        },
+        {
+          "path": "packages/core/src/runtime.ts",
+          "previousSha256": "4c3d4bd67607de87bc7e531014f4e164fac86dc1971222679cdcf2d62fa56926",
+          "updatedSha256": "f16a482faed5febf175956d563670c846204043fe4528dea94ef4576fbf3adb7"
+        },
+        {
+          "path": "packages/core/src/session.ts",
+          "previousSha256": "b022a510365162ce19fedc3828f590c8656c7de2efeaf5a920e241986438304b",
+          "updatedSha256": "c72366d466387dec2f761683a2f45b5867ca271080b9c5ea0ad1b0086704ba4a"
+        }
+      ],
+      "realAttempts": 0,
+      "scope": "Development candidate for Session-free native Model catalog discovery. Historical PASS receipts retain their recorded source scope; new behavior requires separately authorized bounded real qualification before publication."
+    },
+    {
+      "harness": "core",
+      "platform": "win32-x64",
+      "candidateDate": "2026-10-24",
+      "status": "PENDING",
+      "sourceBase": "d1710665836f6d485db9b52ca6a0616e00510096",
+      "feature": "native-model-listing",
+      "changedResources": [
+        {
+          "path": "packages/core/src/acp/driver.ts",
+          "previousSha256": "cbc52af64c4a5243c97954fa24cb4afe524ff95536ab7b91841c6566370edd55",
+          "updatedSha256": "03a589f597ebca2e4d48808792d7d779254eda6840fc64ca18182bff9e651a7d"
+        },
+        {
+          "path": "packages/core/src/capabilities.ts",
+          "previousSha256": "96b8107aa9fc19226ed1c5504e8214867cb6162c3b7c63e6a1739ddb7ca93556",
+          "updatedSha256": "bebcd4afb116008f82679292d31449918a8e83e70ca4334f07894ff947221b49"
+        },
+        {
+          "path": "packages/core/src/errors.ts",
+          "previousSha256": "a4222d797d30321453e516ed54be5e54bd7798b9f1fc9c30d4e4824d92367c1d",
+          "updatedSha256": "d8c1be7b42a4a2f0e19c7d31e4651d22b6ffe3ba996f79a1e600fad6890f0f34"
+        },
+        {
+          "path": "packages/core/src/index.ts",
+          "previousSha256": "0a6b148a07049f5e984dc95b8fc7ce2766e31c612fa39a2b5f81b0e0df4908d6",
+          "updatedSha256": "bf8952a9b5433d93de13913c81f7d63ccac2fb9a854927d53c78897732aa7147"
+        },
+        {
+          "path": "packages/core/src/internal.ts",
+          "previousSha256": "3db4ced4ad3507f3459404ce380d2f19d7d58fcd82b8d8259330b88fc39791af",
+          "updatedSha256": "7d67d9ce5298416bc521c99ce195d9836a48b69f14ddc9ae22da6a4775a737a6"
+        },
+        {
+          "path": "packages/core/src/models.ts",
+          "previousSha256": null,
+          "updatedSha256": "2569990c9ec6f6ab503fb8603b145a1e6c223947a1fa1b326375a5a0af96c9e6"
+        },
+        {
+          "path": "packages/core/src/runtime.ts",
+          "previousSha256": "4c3d4bd67607de87bc7e531014f4e164fac86dc1971222679cdcf2d62fa56926",
+          "updatedSha256": "f16a482faed5febf175956d563670c846204043fe4528dea94ef4576fbf3adb7"
+        },
+        {
+          "path": "packages/core/src/session.ts",
+          "previousSha256": "b022a510365162ce19fedc3828f590c8656c7de2efeaf5a920e241986438304b",
+          "updatedSha256": "c72366d466387dec2f761683a2f45b5867ca271080b9c5ea0ad1b0086704ba4a"
+        }
+      ],
+      "realAttempts": 0,
+      "scope": "Development candidate for Session-free native Model catalog discovery. Historical PASS receipts retain their recorded source scope; new behavior requires separately authorized bounded real qualification before publication."
+    },
+    {
+      "harness": "codex",
+      "platform": "linux-x64",
+      "candidateDate": "2026-10-24",
+      "status": "PENDING",
+      "sourceBase": "d1710665836f6d485db9b52ca6a0616e00510096",
+      "feature": "native-model-listing",
+      "changedResources": [
+        {
+          "path": "packages/codex-adapter/src/codex-acp.ts",
+          "previousSha256": "646ce8f809468fefeaf8b3b9ce81e0f16000fca57660575040f1af8ea2cd7441",
+          "updatedSha256": "e66d2f3920dd742075755d2e3687b38ddd039b4ef63397de2d651633aa235922"
+        },
+        {
+          "path": "packages/codex-adapter/src/codex-process.ts",
+          "previousSha256": "2b6ecdc62f2b13c1553a8ffc0929575a9e00e05c1352f8c90b5888003aee6aca",
+          "updatedSha256": "8f6cf686290c2e0771c2956e9f809f96deb765cf012eba8b51e2ab93e96827d5"
+        },
+        {
+          "path": "packages/codex-adapter/src/index.ts",
+          "previousSha256": "48e2f1e845df2f75c74e2f61eefae683ec1ec38cc2b6fd7ea9dfcd0865092522",
+          "updatedSha256": "8fb1c4a52fa9d221b36d18f4dba07c111036b751b2fca78e46260dec5ee29611"
+        }
+      ],
+      "realAttempts": 0,
+      "scope": "Development candidate for Session-free native Model catalog discovery. Historical PASS receipts retain their recorded source scope; new behavior requires separately authorized bounded real qualification before publication."
+    },
+    {
+      "harness": "codex",
+      "platform": "win32-x64",
+      "candidateDate": "2026-10-24",
+      "status": "PENDING",
+      "sourceBase": "d1710665836f6d485db9b52ca6a0616e00510096",
+      "feature": "native-model-listing",
+      "changedResources": [
+        {
+          "path": "packages/codex-adapter/src/codex-acp.ts",
+          "previousSha256": "646ce8f809468fefeaf8b3b9ce81e0f16000fca57660575040f1af8ea2cd7441",
+          "updatedSha256": "e66d2f3920dd742075755d2e3687b38ddd039b4ef63397de2d651633aa235922"
+        },
+        {
+          "path": "packages/codex-adapter/src/codex-process.ts",
+          "previousSha256": "2b6ecdc62f2b13c1553a8ffc0929575a9e00e05c1352f8c90b5888003aee6aca",
+          "updatedSha256": "8f6cf686290c2e0771c2956e9f809f96deb765cf012eba8b51e2ab93e96827d5"
+        },
+        {
+          "path": "packages/codex-adapter/src/index.ts",
+          "previousSha256": "48e2f1e845df2f75c74e2f61eefae683ec1ec38cc2b6fd7ea9dfcd0865092522",
+          "updatedSha256": "8fb1c4a52fa9d221b36d18f4dba07c111036b751b2fca78e46260dec5ee29611"
+        }
+      ],
+      "realAttempts": 0,
+      "scope": "Development candidate for Session-free native Model catalog discovery. Historical PASS receipts retain their recorded source scope; new behavior requires separately authorized bounded real qualification before publication."
+    },
+    {
+      "harness": "opencode",
+      "platform": "linux-x64",
+      "candidateDate": "2026-10-24",
+      "status": "PENDING",
+      "sourceBase": "d1710665836f6d485db9b52ca6a0616e00510096",
+      "feature": "native-model-listing",
+      "changedResources": [
+        {
+          "path": "packages/opencode-adapter/src/index.ts",
+          "previousSha256": "28952c7f19de5e116eb4a3ef61408e6eb5f78da669cdd9a8786177d409020a34",
+          "updatedSha256": "e5582b6d086ba084b49976226884a2a4eaba36c09fd194ee3ded0f56e88a1e13"
+        },
+        {
+          "path": "packages/opencode-adapter/src/opencode-acp.ts",
+          "previousSha256": "4ba43200d4eccd34ef4c8222db9991f04398a5e93cbeee2bd939adb87fba6cd2",
+          "updatedSha256": "cf45bfa6bfb54b08771a0821994ba2a61e870ac1f166f4a07ed6e4a1f0a2b8d5"
+        },
+        {
+          "path": "packages/opencode-adapter/src/opencode-process.ts",
+          "previousSha256": "013ca98b9cfe4e5db8454cd28a430a8e2d70c451212c0b5b12108d15cbdde83c",
+          "updatedSha256": "c129bd2bd4d0b3dd54cddec7520286722f7d7aeef81408312b4b0f4b9f2c12c3"
+        }
+      ],
+      "realAttempts": 0,
+      "scope": "Development candidate for Session-free native Model catalog discovery. Historical PASS receipts retain their recorded source scope; new behavior requires separately authorized bounded real qualification before publication."
+    },
+    {
+      "harness": "opencode",
+      "platform": "win32-x64",
+      "candidateDate": "2026-10-24",
+      "status": "PENDING",
+      "sourceBase": "d1710665836f6d485db9b52ca6a0616e00510096",
+      "feature": "native-model-listing",
+      "changedResources": [
+        {
+          "path": "packages/opencode-adapter/src/index.ts",
+          "previousSha256": "28952c7f19de5e116eb4a3ef61408e6eb5f78da669cdd9a8786177d409020a34",
+          "updatedSha256": "e5582b6d086ba084b49976226884a2a4eaba36c09fd194ee3ded0f56e88a1e13"
+        },
+        {
+          "path": "packages/opencode-adapter/src/opencode-acp.ts",
+          "previousSha256": "4ba43200d4eccd34ef4c8222db9991f04398a5e93cbeee2bd939adb87fba6cd2",
+          "updatedSha256": "cf45bfa6bfb54b08771a0821994ba2a61e870ac1f166f4a07ed6e4a1f0a2b8d5"
+        },
+        {
+          "path": "packages/opencode-adapter/src/opencode-process.ts",
+          "previousSha256": "013ca98b9cfe4e5db8454cd28a430a8e2d70c451212c0b5b12108d15cbdde83c",
+          "updatedSha256": "c129bd2bd4d0b3dd54cddec7520286722f7d7aeef81408312b4b0f4b9f2c12c3"
+        }
+      ],
+      "realAttempts": 0,
+      "scope": "Development candidate for Session-free native Model catalog discovery. Historical PASS receipts retain their recorded source scope; new behavior requires separately authorized bounded real qualification before publication."
+    },
+    {
+      "harness": "kimi",
+      "platform": "linux-x64",
+      "candidateDate": "2026-10-24",
+      "status": "PENDING",
+      "sourceBase": "d1710665836f6d485db9b52ca6a0616e00510096",
+      "feature": "native-model-listing",
+      "changedResources": [
+        {
+          "path": "packages/kimi-adapter/src/index.ts",
+          "previousSha256": "1908c70548dd8158ebda9bdd0b0baa7c8f97e95a8d3df2a0b8024c3a35f58e5e",
+          "updatedSha256": "4384630bafa2bca0450936315f1a5e0edff22bfdb8753b501f25f0b150f54c11"
+        },
+        {
+          "path": "packages/kimi-adapter/src/kimi-process.ts",
+          "previousSha256": "6588e2c883918c52b39be5ece1144370ddded129561ffe70acc148bf5bc38cb2",
+          "updatedSha256": "fc3fe5b4171a7587d79f4fe883a5dc70e3049df1303c751f945cc1def3bcae93"
+        }
+      ],
+      "realAttempts": 0,
+      "scope": "Development candidate for Session-free native Model catalog discovery. Historical PASS receipts retain their recorded source scope; new behavior requires separately authorized bounded real qualification before publication."
+    },
+    {
+      "harness": "kimi",
+      "platform": "win32-x64",
+      "candidateDate": "2026-10-24",
+      "status": "PENDING",
+      "sourceBase": "d1710665836f6d485db9b52ca6a0616e00510096",
+      "feature": "native-model-listing",
+      "changedResources": [
+        {
+          "path": "packages/kimi-adapter/src/index.ts",
+          "previousSha256": "1908c70548dd8158ebda9bdd0b0baa7c8f97e95a8d3df2a0b8024c3a35f58e5e",
+          "updatedSha256": "4384630bafa2bca0450936315f1a5e0edff22bfdb8753b501f25f0b150f54c11"
+        },
+        {
+          "path": "packages/kimi-adapter/src/kimi-process.ts",
+          "previousSha256": "6588e2c883918c52b39be5ece1144370ddded129561ffe70acc148bf5bc38cb2",
+          "updatedSha256": "fc3fe5b4171a7587d79f4fe883a5dc70e3049df1303c751f945cc1def3bcae93"
+        }
+      ],
+      "realAttempts": 0,
+      "scope": "Development candidate for Session-free native Model catalog discovery. Historical PASS receipts retain their recorded source scope; new behavior requires separately authorized bounded real qualification before publication."
+    },
+    {
+      "harness": "pi",
+      "platform": "linux-x64",
+      "candidateDate": "2026-10-24",
+      "status": "PENDING",
+      "sourceBase": "d1710665836f6d485db9b52ca6a0616e00510096",
+      "feature": "native-model-listing",
+      "changedResources": [
+        {
+          "path": "packages/pi-adapter/src/index.ts",
+          "previousSha256": "3b585a1c4a9cd136f9bb8342fdd43738d7a14508b1ec0c661146b2147e1c5d03",
+          "updatedSha256": "7fbc59020bdcdc5edad355ae51af0ae2d8205b08714e9dbffcb685bec20b55e2"
+        },
+        {
+          "path": "packages/pi-adapter/src/pi-process.ts",
+          "previousSha256": "06439a06bf1eaa98a63dfb4150d87ac6ad8cbc147482b351e93dc221508e973d",
+          "updatedSha256": "b6827855739e628d25befd07a4ebdc33b0e5028fc7022d0f810b95a1e8704a31"
+        },
+        {
+          "path": "packages/pi-adapter/src/sdk-worker.mjs",
+          "previousSha256": "61e902cd6fc44a8712ed6f126ea66d8704e078851d97b6a67e2c2dd577bf528c",
+          "updatedSha256": "883b77e6331ef39ac50ed24f63c4fbeff9406b7f0a94f79cddb6f3181e1a7fe0"
+        }
+      ],
+      "realAttempts": 0,
+      "scope": "Development candidate for Session-free native Model catalog discovery. Historical PASS receipts retain their recorded source scope; new behavior requires separately authorized bounded real qualification before publication.",
+      "sdkVersion": "1.2.0"
+    },
+    {
+      "harness": "pi",
+      "platform": "win32-x64",
+      "candidateDate": "2026-10-24",
+      "status": "PENDING",
+      "sourceBase": "d1710665836f6d485db9b52ca6a0616e00510096",
+      "feature": "native-model-listing",
+      "changedResources": [
+        {
+          "path": "packages/pi-adapter/src/index.ts",
+          "previousSha256": "3b585a1c4a9cd136f9bb8342fdd43738d7a14508b1ec0c661146b2147e1c5d03",
+          "updatedSha256": "7fbc59020bdcdc5edad355ae51af0ae2d8205b08714e9dbffcb685bec20b55e2"
+        },
+        {
+          "path": "packages/pi-adapter/src/pi-process.ts",
+          "previousSha256": "06439a06bf1eaa98a63dfb4150d87ac6ad8cbc147482b351e93dc221508e973d",
+          "updatedSha256": "b6827855739e628d25befd07a4ebdc33b0e5028fc7022d0f810b95a1e8704a31"
+        },
+        {
+          "path": "packages/pi-adapter/src/sdk-worker.mjs",
+          "previousSha256": "61e902cd6fc44a8712ed6f126ea66d8704e078851d97b6a67e2c2dd577bf528c",
+          "updatedSha256": "883b77e6331ef39ac50ed24f63c4fbeff9406b7f0a94f79cddb6f3181e1a7fe0"
+        }
+      ],
+      "realAttempts": 0,
+      "scope": "Development candidate for Session-free native Model catalog discovery. Historical PASS receipts retain their recorded source scope; new behavior requires separately authorized bounded real qualification before publication.",
+      "sdkVersion": "1.2.0"
+    },
+    {
+      "harness": "agy",
+      "platform": "linux-x64",
+      "candidateDate": "2026-10-24",
+      "status": "PENDING",
+      "sourceBase": "d1710665836f6d485db9b52ca6a0616e00510096",
+      "feature": "native-model-listing",
+      "changedResources": [
+        {
+          "path": "packages/agy-adapter/src/agy-process.ts",
+          "previousSha256": "176a2ba5bcf3e687029247c1f8f3ba197417dc471b84be891aeddc67f4ee194e",
+          "updatedSha256": "24c3ea513aad47a1eb417cb45ab71047a2b394f47ad4c51ef8ba6ed62a0290b3"
+        },
+        {
+          "path": "packages/agy-adapter/src/index.ts",
+          "previousSha256": "33b029cd402b98e6d61276f02ea6424b1867a5fcec4394d241039a103b2db2f3",
+          "updatedSha256": "26fb90eb8638f5fc23ee938c2a9c70b643783fedbe8f30b0335d8cdcf7088033"
+        },
+        {
+          "path": "packages/agy-adapter/src/model-query.ts",
+          "previousSha256": null,
+          "updatedSha256": "c5396bf396f4cab6bc84e966cec6e799444882215c61d8fadf465fd61c11e276"
+        }
+      ],
+      "realAttempts": 0,
+      "scope": "Development candidate for Session-free native Model catalog discovery. Historical PASS receipts retain their recorded source scope; new behavior requires separately authorized bounded real qualification before publication."
+    },
+    {
+      "harness": "agy",
+      "platform": "win32-x64",
+      "candidateDate": "2026-10-24",
+      "status": "PENDING",
+      "sourceBase": "d1710665836f6d485db9b52ca6a0616e00510096",
+      "feature": "native-model-listing",
+      "changedResources": [
+        {
+          "path": "packages/agy-adapter/src/agy-process.ts",
+          "previousSha256": "176a2ba5bcf3e687029247c1f8f3ba197417dc471b84be891aeddc67f4ee194e",
+          "updatedSha256": "24c3ea513aad47a1eb417cb45ab71047a2b394f47ad4c51ef8ba6ed62a0290b3"
+        },
+        {
+          "path": "packages/agy-adapter/src/index.ts",
+          "previousSha256": "33b029cd402b98e6d61276f02ea6424b1867a5fcec4394d241039a103b2db2f3",
+          "updatedSha256": "26fb90eb8638f5fc23ee938c2a9c70b643783fedbe8f30b0335d8cdcf7088033"
+        },
+        {
+          "path": "packages/agy-adapter/src/model-query.ts",
+          "previousSha256": null,
+          "updatedSha256": "c5396bf396f4cab6bc84e966cec6e799444882215c61d8fadf465fd61c11e276"
+        }
+      ],
+      "realAttempts": 0,
+      "scope": "Development candidate for Session-free native Model catalog discovery. Historical PASS receipts retain their recorded source scope; new behavior requires separately authorized bounded real qualification before publication."
     }
   ]
 }
